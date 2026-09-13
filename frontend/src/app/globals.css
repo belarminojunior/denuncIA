@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #faf5e9;
+  --color-bg-alt: #f2ecda;
+  --color-card: #fbf7ee;
+  --color-border: #e4dbc3;
+  --color-border-strong: #d8cbac;
+
+  --color-ink: #241c13;
+  --color-ink-soft: #4a4030;
+  --color-muted: #7a705d;
+
+  --color-dark: #241d15;
+  --color-dark-alt: #2f271b;
+  --color-dark-border: #43392a;
+  --color-dark-muted: #b8ab90;
+
+  --color-green: #1e4d33;
+  --color-green-dark: #163a26;
+  --color-green-soft: #e7efe5;
+
+  --color-amber: #a8631c;
+  --color-amber-soft: #f6e6cf;
+  --color-red: #7d2634;
+  --color-red-soft: #f3dfe0;
+  --color-teal: #3f6b52;
+  --color-teal-soft: #e4efe6;
+  --color-gray-badge: #756c5a;
+  --color-gray-badge-soft: #e9e3d3;
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-bg-alt: var(--color-bg-alt);
+  --color-card: var(--color-card);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-muted: var(--color-muted);
+  --color-dark: var(--color-dark);
+  --color-dark-alt: var(--color-dark-alt);
+  --color-dark-border: var(--color-dark-border);
+  --color-dark-muted: var(--color-dark-muted);
+  --color-green: var(--color-green);
+  --color-green-dark: var(--color-green-dark);
+  --color-green-soft: var(--color-green-soft);
+  --color-amber: var(--color-amber);
+  --color-amber-soft: var(--color-amber-soft);
+  --color-red: var(--color-red);
+  --color-red-soft: var(--color-red-soft);
+  --color-teal: var(--color-teal);
+  --color-teal-soft: var(--color-teal-soft);
+  --color-gray-badge: var(--color-gray-badge);
+  --color-gray-badge-soft: var(--color-gray-badge-soft);
+
+  --font-serif: var(--font-source-serif), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-mono-body), ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.label-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.protocol-code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+::selection {
+  background: var(--color-green-soft);
+}
