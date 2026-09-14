@@ -1,4 +1,4 @@
-import type { Categoria, EstadoDenuncia, Prioridade } from "@/lib/types";
+import type { Categoria, EstadoDenuncia, EstadoResposta, Prioridade, TipoOperacao, UserRole } from "@/lib/types";
 
 export const CATEGORIA_LABEL: Record<Categoria, string> = {
   SUBORNO: "Suborno",
@@ -40,6 +40,64 @@ export const ESTADO_DESCRICAO_PUBLICA: Record<EstadoDenuncia, string> = {
   ARQUIVADA: "Processo arquivado.",
   REJEITADA: "Denúncia rejeitada após análise.",
 };
+
+export const ESTADO_RESPOSTA_LABEL: Record<EstadoResposta, string> = {
+  AGUARDA: "Aguarda",
+  RESPONDIDO: "Respondido",
+  ACUSACAO: "Acusação",
+  ARQUIVADO: "Arquivado",
+};
+
+export const TIPO_OPERACAO_LABEL: Record<TipoOperacao, string> = {
+  CRIACAO: "Criação",
+  CLASSIFICACAO_LLM: "Classificação LLM",
+  ACESSO: "Acesso",
+  ALTERACAO_ESTADO: "Alteração de estado",
+  VALIDACAO: "Validação",
+  ENCAMINHAMENTO: "Encaminhamento",
+  LOGIN: "Login",
+};
+
+export const USER_ROLE_LABEL: Record<UserRole, string> = {
+  ADMIN: "Admin",
+  COORDENADOR: "Coordenador",
+  TECNICO: "Técnico",
+  CONSULTA: "Consulta",
+};
+
+export function estadoRespostaDisplay(e: EstadoResposta, forwardedAt?: string | null): string {
+  if (e === "AGUARDA" && forwardedAt) {
+    const dias = (Date.now() - new Date(forwardedAt).getTime()) / 86400000;
+    if (dias > 30) return "SEM_RESPOSTA";
+  }
+  return e;
+}
+
+export function estadoRespostaBadgeClass(e: EstadoResposta, forwardedAt?: string | null): string {
+  if (e === "AGUARDA" && forwardedAt) {
+    const dias = (Date.now() - new Date(forwardedAt).getTime()) / 86400000;
+    if (dias > 30) return "bg-amber-soft text-amber";
+  }
+  switch (e) {
+    case "ACUSACAO":
+      return "bg-green-soft text-green";
+    case "RESPONDIDO":
+      return "bg-gray-badge-soft text-gray-badge";
+    case "ARQUIVADO":
+      return "bg-bg-alt text-muted border border-border-strong";
+    case "AGUARDA":
+    default:
+      return "bg-teal-soft text-teal";
+  }
+}
+
+export function respostaResumo(estado: EstadoResposta, forwardedAt: string, dataResposta: string | null): string {
+  if (estado === "AGUARDA") {
+    const dias = Math.floor((Date.now() - new Date(forwardedAt).getTime()) / 86400000);
+    return dias > 30 ? "+30 dias" : "aguarda";
+  }
+  return dataResposta ? timeAgo(dataResposta) : "—";
+}
 
 export function prioridadeBadgeClass(p: Prioridade | null | undefined): string {
   switch (p) {
@@ -101,5 +159,8 @@ export function timeAgo(iso: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `há ${hours} h`;
   const days = Math.floor(hours / 24);
-  return `há ${days} dia${days > 1 ? "s" : ""}`;
+  if (days === 1) return "ontem";
+  if (days < 30) return `há ${days} dias`;
+  const months = Math.floor(days / 30);
+  return `há ${months} ${months > 1 ? "meses" : "mês"}`;
 }

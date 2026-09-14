@@ -1,8 +1,8 @@
-"""Popula a base de dados com denúncias fictícias para demonstração.
+"""Popula a base de dados com denúncias, utilizadores e histórico fictícios para demonstração.
 
-As denúncias e entidades aqui descritas são inteiramente fictícias, criadas
-apenas para demonstrar o dashboard, os filtros e o fluxo de validação do
-protótipo. Não correspondem a factos reais nem identificam pessoas reais.
+As denúncias, entidades e contas aqui descritas são inteiramente fictícias, criadas
+apenas para demonstrar o dashboard, os filtros, os encaminhamentos, a auditoria e o
+fluxo de validação do protótipo. Não correspondem a factos nem pessoas reais.
 
 Uso:
     python scripts/seed_db.py
@@ -15,8 +15,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
-from app.models.denuncia import Categoria, Denuncia, EstadoDenuncia, Prioridade  # noqa: E402
-from app.models.audit_log import AuditLog  # noqa: E402
+from app.models.audit_log import AuditLog, TipoOperacao  # noqa: E402
+from app.models.denuncia import Categoria, Denuncia, EstadoDenuncia, EstadoResposta, Prioridade  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -25,6 +25,47 @@ DEMO_PASSWORD = "Admin123!"
 
 AGORA = datetime.utcnow()
 ANO = AGORA.year
+
+_UTILIZADORES = [
+    dict(name="Técnico GCCC", email=DEMO_EMAIL, role=UserRole.TECNICO, last_login_delta=timedelta(hours=2)),
+    dict(
+        name="Coordenação de análise",
+        email="coordenacao@gccc.gov.mz",
+        role=UserRole.COORDENADOR,
+        last_login_delta=timedelta(hours=5),
+    ),
+    dict(
+        name="Administração de sistema",
+        email="admin@gccc.gov.mz",
+        role=UserRole.ADMIN,
+        last_login_delta=timedelta(days=1),
+    ),
+    dict(
+        name="Técnico — Sofala",
+        email="sofala@gccc.gov.mz",
+        role=UserRole.TECNICO,
+        last_login_delta=timedelta(days=1, hours=6),
+    ),
+    dict(
+        name="Técnico — Nampula",
+        email="nampula@gccc.gov.mz",
+        role=UserRole.TECNICO,
+        last_login_delta=timedelta(days=3),
+    ),
+    dict(
+        name="Gabinete jurídico",
+        email="juridico@gccc.gov.mz",
+        role=UserRole.CONSULTA,
+        last_login_delta=timedelta(days=4),
+    ),
+    dict(
+        name="Técnico — Tete",
+        email="tete@gccc.gov.mz",
+        role=UserRole.TECNICO,
+        last_login_delta=timedelta(days=60),
+        ativo=False,
+    ),
+]
 
 _SEED = [
     dict(
@@ -39,6 +80,10 @@ _SEED = [
             "oficial, para liberar mercadoria já com os documentos em ordem."
         ),
         validar=True,
+        entidade="Autoridade Tributária",
+        oficio="OF/265/26",
+        resposta_estado=EstadoResposta.ARQUIVADO,
+        resposta_dias=5,
     ),
     dict(
         dias_atras=8,
@@ -52,6 +97,10 @@ _SEED = [
             "de campanha, com fotografias que mostram a entrega dos bens."
         ),
         validar=True,
+        entidade="Comissão Nacional de Eleições",
+        oficio="OF/398/26",
+        resposta_estado=EstadoResposta.RESPONDIDO,
+        resposta_dias=3,
     ),
     dict(
         dias_atras=6,
@@ -78,6 +127,9 @@ _SEED = [
             "a adjudicação de um contrato de obras mediante uma percentagem do valor."
         ),
         validar=True,
+        entidade="Inspeção-Geral de Finanças",
+        oficio="OF/381/26",
+        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=4,
@@ -106,7 +158,7 @@ _SEED = [
         validar=False,
     ),
     dict(
-        dias_atras=2,
+        dias_atras=35,
         categoria=Categoria.TRAFICO_DE_INFLUENCIA,
         confianca=0.81,
         prioridade=Prioridade.ALTA,
@@ -117,6 +169,9 @@ _SEED = [
             "uma decisão em troca de um pagamento adicional não faturado."
         ),
         validar=True,
+        entidade="Procuradoria-Geral da República",
+        oficio="OF/412/26",
+        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=1,
@@ -132,7 +187,7 @@ _SEED = [
         validar=True,
     ),
     dict(
-        dias_atras=1,
+        dias_atras=31,
         categoria=Categoria.ABUSO_DE_PODER,
         confianca=0.88,
         prioridade=Prioridade.ALTA,
@@ -143,6 +198,9 @@ _SEED = [
             "estabelecimento concorrente de um negócio ligado a um agente da autoridade."
         ),
         validar=True,
+        entidade="Procuradoria-Geral da República",
+        oficio="OF/330/26",
+        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=0,
@@ -205,23 +263,35 @@ def _protocolo(indice: int) -> str:
     return f"GCCC-{ANO}-{100 + indice:06d}"
 
 
+def _criar_utilizadores(db) -> dict[str, User]:
+    utilizadores: dict[str, User] = {}
+    for spec in _UTILIZADORES:
+        existente = db.query(User).filter(User.email == spec["email"]).first()
+        if existente is None:
+            existente = User(
+                name=spec["name"],
+                email=spec["email"],
+                password_hash=hash_password(DEMO_PASSWORD),
+                role=spec["role"],
+                ativo=spec.get("ativo", True),
+                last_login_at=AGORA - spec["last_login_delta"],
+            )
+            db.add(existente)
+            db.flush()
+        utilizadores[spec["email"]] = existente
+    return utilizadores
+
+
 def main() -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        tecnico = db.query(User).filter(User.email == DEMO_EMAIL).first()
-        if tecnico is None:
-            tecnico = User(
-                name="Técnico GCCC",
-                email=DEMO_EMAIL,
-                password_hash=hash_password(DEMO_PASSWORD),
-                role=UserRole.TECNICO,
-            )
-            db.add(tecnico)
-            db.flush()
+        utilizadores = _criar_utilizadores(db)
+        tecnico = utilizadores[DEMO_EMAIL]
+        db.commit()
 
         if db.query(Denuncia).count() > 0:
-            print("Já existem denúncias na base de dados — seed ignorado.")
+            print("Já existem denúncias na base de dados — seed de denúncias ignorado.")
             return
 
         for indice, item in enumerate(_SEED, start=1):
@@ -232,14 +302,14 @@ def main() -> None:
                 nome_denunciante=None if item.get("anonima") else "Denunciante Fictício",
                 local_ocorrencia=item["local"],
                 data_ocorrencia=(criado_em - timedelta(days=3)).strftime("%Y-%m-%d"),
-                descricao=item["descricao"] if isinstance(item["descricao"], str) else item["descricao"][0],
+                descricao=item["descricao"],
                 categoria_llm=item["categoria"],
                 confianca_llm=item["confianca"],
                 prioridade_llm=item["prioridade"],
                 resumo_llm="Resumo automático gerado para fins de demonstração.",
                 justificacao_llm="Justificação simulada com base nos indicadores identificados no relato.",
                 indicadores_llm=["indicador demonstrativo 1", "indicador demonstrativo 2"],
-                llm_modelo="seed-fixture",
+                llm_modelo="qwen3:4b-instruct",
                 estado=item["estado"],
                 created_at=criado_em,
                 updated_at=criado_em,
@@ -253,13 +323,23 @@ def main() -> None:
                 if item["estado"] in (EstadoDenuncia.ENCAMINHADA, EstadoDenuncia.EM_INVESTIGACAO, EstadoDenuncia.ARQUIVADA):
                     denuncia.forwarded_at = criado_em + timedelta(hours=3)
 
+            entidade = item.get("entidade")
+            if entidade:
+                denuncia.entidade_destinataria = entidade
+                denuncia.numero_oficio = item.get("oficio")
+                denuncia.estado_resposta = item.get("resposta_estado", EstadoResposta.AGUARDA)
+                resposta_dias = item.get("resposta_dias")
+                if resposta_dias is not None and denuncia.forwarded_at is not None:
+                    denuncia.data_resposta = denuncia.forwarded_at + timedelta(days=resposta_dias)
+
             db.add(denuncia)
             db.flush()
 
             db.add(
                 AuditLog(
                     denuncia_id=denuncia.id,
-                    acao="Denúncia criada",
+                    tipo=TipoOperacao.CRIACAO,
+                    acao="Denúncia criada" + (" (anónima)" if denuncia.anonima else " pelo denunciante"),
                     estado_anterior=None,
                     estado_novo=EstadoDenuncia.RECEBIDA.value,
                     created_at=criado_em,
@@ -268,7 +348,11 @@ def main() -> None:
             db.add(
                 AuditLog(
                     denuncia_id=denuncia.id,
-                    acao=f"Classificação preliminar: {item['categoria'].value} ({item['confianca']:.0%})",
+                    tipo=TipoOperacao.CLASSIFICACAO_LLM,
+                    acao=(
+                        f"qwen3:4b sugeriu {item['categoria'].value}, confiança "
+                        f"{item['confianca']:.0%}, prioridade {item['prioridade'].value}"
+                    ),
                     estado_anterior=EstadoDenuncia.RECEBIDA.value,
                     estado_novo=EstadoDenuncia.PENDENTE_VALIDACAO.value,
                     created_at=criado_em + timedelta(minutes=1),
@@ -278,7 +362,8 @@ def main() -> None:
                 db.add(
                     AuditLog(
                         denuncia_id=denuncia.id,
-                        acao="Processo aberto para revisão",
+                        tipo=TipoOperacao.ALTERACAO_ESTADO,
+                        acao=f"{tecnico.name} abriu o processo para revisão",
                         user_id=tecnico.id,
                         estado_anterior=EstadoDenuncia.PENDENTE_VALIDACAO.value,
                         estado_novo=EstadoDenuncia.EM_ANALISE.value,
@@ -289,27 +374,39 @@ def main() -> None:
                 db.add(
                     AuditLog(
                         denuncia_id=denuncia.id,
-                        acao="Denúncia validada",
+                        tipo=TipoOperacao.VALIDACAO,
+                        acao=f"{tecnico.name} validou a denúncia",
                         user_id=tecnico.id,
                         estado_anterior=EstadoDenuncia.EM_ANALISE.value,
                         estado_novo=EstadoDenuncia.VALIDADA.value,
                         created_at=criado_em + timedelta(hours=2),
                     )
                 )
-            if item["estado"] in (EstadoDenuncia.ENCAMINHADA, EstadoDenuncia.EM_INVESTIGACAO, EstadoDenuncia.ARQUIVADA):
+            if entidade:
                 db.add(
                     AuditLog(
                         denuncia_id=denuncia.id,
-                        acao="Denúncia encaminhada para a entidade competente",
+                        tipo=TipoOperacao.ENCAMINHAMENTO,
+                        acao=f"{tecnico.name} encaminhou para {entidade} ({item.get('oficio')})",
                         user_id=tecnico.id,
                         estado_anterior=EstadoDenuncia.VALIDADA.value,
                         estado_novo=EstadoDenuncia.ENCAMINHADA.value,
                         created_at=criado_em + timedelta(hours=3),
                     )
                 )
+                if denuncia.data_resposta is not None:
+                    db.add(
+                        AuditLog(
+                            denuncia_id=denuncia.id,
+                            tipo=TipoOperacao.ENCAMINHAMENTO,
+                            acao=f"{tecnico.name} registou resposta de {entidade}: {denuncia.estado_resposta.value}",
+                            user_id=tecnico.id,
+                            created_at=denuncia.data_resposta,
+                        )
+                    )
 
         db.commit()
-        print(f"{len(_SEED)} denúncias fictícias criadas com sucesso.")
+        print(f"{len(_UTILIZADORES)} utilizadores e {len(_SEED)} denúncias fictícias criadas com sucesso.")
     finally:
         db.close()
 

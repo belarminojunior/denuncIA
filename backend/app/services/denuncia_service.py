@@ -14,7 +14,8 @@ from datetime import datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.denuncia import Denuncia, EstadoDenuncia
+from app.models.audit_log import TipoOperacao
+from app.models.denuncia import Denuncia, EstadoDenuncia, EstadoResposta
 from app.models.user import User
 from app.schemas.denuncia import DenunciaCreateData
 from app.services import audit_service
@@ -46,7 +47,8 @@ def criar_denuncia(db: Session, dados: DenunciaCreateData) -> Denuncia:
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao="Denúncia criada",
+        acao="Denúncia criada" + (" (anónima)" if denuncia.anonima else " pelo denunciante"),
+        tipo=TipoOperacao.CRIACAO,
         estado_anterior=None,
         estado_novo=EstadoDenuncia.RECEBIDA.value,
     )
@@ -67,12 +69,16 @@ def criar_denuncia(db: Session, dados: DenunciaCreateData) -> Denuncia:
     if classificacao.erro:
         acao = f"Classificação automática falhou: {classificacao.erro}"
     else:
-        acao = f"Classificação preliminar: {classificacao.categoria} ({classificacao.confianca:.0%})"
+        acao = (
+            f"{classificacao.modelo} sugeriu {classificacao.categoria}, "
+            f"confiança {classificacao.confianca:.0%}, prioridade {classificacao.prioridade}"
+        )
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
         acao=acao,
+        tipo=TipoOperacao.CLASSIFICACAO_LLM,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,
     )
@@ -104,7 +110,8 @@ def abrir_para_revisao(db: Session, denuncia: Denuncia, tecnico: User) -> Denunc
         audit_service.log_action(
             db,
             denuncia_id=denuncia.id,
-            acao="Processo aberto para revisão",
+            acao=f"{tecnico.name} abriu o processo para revisão",
+            tipo=TipoOperacao.ALTERACAO_ESTADO,
             user_id=tecnico.id,
             estado_anterior=estado_anterior.value,
             estado_novo=denuncia.estado.value,
@@ -112,6 +119,17 @@ def abrir_para_revisao(db: Session, denuncia: Denuncia, tecnico: User) -> Denunc
         db.commit()
         db.refresh(denuncia)
     return denuncia
+
+
+def registar_acesso_anexo(db: Session, denuncia: Denuncia, tecnico: User, filename: str) -> None:
+    audit_service.log_action(
+        db,
+        denuncia_id=denuncia.id,
+        acao=f"{tecnico.name} consultou o anexo '{filename}'",
+        tipo=TipoOperacao.ACESSO,
+        user_id=tecnico.id,
+    )
+    db.commit()
 
 
 def _aplicar_validacao_parcial(
@@ -138,14 +156,15 @@ def validar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, categoria_v
     categoria_alterada = (
         denuncia.categoria_llm is not None and categoria_validada is not None and categoria_validada.value != denuncia.categoria_llm.value
     )
-    acao = "Denúncia validada"
+    acao = f"{tecnico.name} validou a denúncia"
     if categoria_alterada:
-        acao = f"Técnico alterou categoria para {categoria_validada.value} e validou a denúncia"
+        acao = f"{tecnico.name} corrigiu {denuncia.categoria_llm.value} → {categoria_validada.value} e validou a denúncia"
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
         acao=acao,
+        tipo=TipoOperacao.VALIDACAO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,
@@ -156,7 +175,14 @@ def validar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, categoria_v
     return denuncia
 
 
-def encaminhar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoes_tecnico: str | None):
+def encaminhar_denuncia(
+    db: Session,
+    denuncia: Denuncia,
+    tecnico: User,
+    entidade_destinataria: str,
+    numero_oficio: str,
+    observacoes_tecnico: str | None,
+):
     if denuncia.categoria_validada is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,14 +194,45 @@ def encaminhar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observac
     denuncia.estado = EstadoDenuncia.ENCAMINHADA
     denuncia.tecnico_responsavel_id = tecnico.id
     denuncia.forwarded_at = datetime.utcnow()
+    denuncia.entidade_destinataria = entidade_destinataria
+    denuncia.numero_oficio = numero_oficio
+    denuncia.estado_resposta = EstadoResposta.AGUARDA
+    denuncia.data_resposta = None
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao="Denúncia encaminhada para a entidade competente",
+        acao=f"{tecnico.name} encaminhou para {entidade_destinataria} ({numero_oficio})",
+        tipo=TipoOperacao.ENCAMINHAMENTO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,
+        observacao=observacoes_tecnico,
+    )
+    db.commit()
+    db.refresh(denuncia)
+    return denuncia
+
+
+def registar_resposta(db: Session, denuncia: Denuncia, tecnico: User, estado_resposta: EstadoResposta, observacoes_tecnico: str | None):
+    if denuncia.entidade_destinataria is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta denúncia ainda não foi encaminhada a nenhuma entidade.",
+        )
+    denuncia.estado_resposta = estado_resposta
+    denuncia.data_resposta = datetime.utcnow()
+    if estado_resposta == EstadoResposta.ACUSACAO and denuncia.estado != EstadoDenuncia.EM_INVESTIGACAO:
+        denuncia.estado = EstadoDenuncia.EM_INVESTIGACAO
+    if observacoes_tecnico is not None:
+        denuncia.observacoes_tecnico = observacoes_tecnico
+
+    audit_service.log_action(
+        db,
+        denuncia_id=denuncia.id,
+        acao=f"{tecnico.name} registou resposta de {denuncia.entidade_destinataria}: {estado_resposta.value}",
+        tipo=TipoOperacao.ENCAMINHAMENTO,
+        user_id=tecnico.id,
         observacao=observacoes_tecnico,
     )
     db.commit()
@@ -193,7 +250,8 @@ def rejeitar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoe
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao="Denúncia rejeitada",
+        acao=f"{tecnico.name} rejeitou a denúncia",
+        tipo=TipoOperacao.ALTERACAO_ESTADO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,
@@ -208,13 +266,16 @@ def arquivar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoe
     estado_anterior = denuncia.estado
     denuncia.estado = EstadoDenuncia.ARQUIVADA
     denuncia.tecnico_responsavel_id = tecnico.id
+    if denuncia.entidade_destinataria is not None:
+        denuncia.estado_resposta = EstadoResposta.ARQUIVADO
     if observacoes_tecnico is not None:
         denuncia.observacoes_tecnico = observacoes_tecnico
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao="Denúncia arquivada",
+        acao=f"{tecnico.name} arquivou a denúncia",
+        tipo=TipoOperacao.ALTERACAO_ESTADO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,
@@ -232,7 +293,8 @@ def atualizar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, categoria
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao="Técnico atualizou observações/classificação",
+        acao=f"{tecnico.name} atualizou observações/classificação",
+        tipo=TipoOperacao.VALIDACAO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
         estado_novo=denuncia.estado.value,

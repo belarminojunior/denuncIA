@@ -10,13 +10,15 @@ import { Badge } from "@/components/ui/Badge";
 import {
   CATEGORIA_LABEL,
   ESTADO_LABEL,
+  ESTADO_RESPOSTA_LABEL,
   PRIORIDADE_LABEL,
   estadoBadgeClass,
+  estadoRespostaBadgeClass,
   prioridadeBadgeClass,
   formatDateTime,
 } from "@/lib/format";
-import { CATEGORIAS, PRIORIDADES } from "@/lib/types";
-import type { Categoria, DenunciaDetailOut, Prioridade } from "@/lib/types";
+import { CATEGORIAS, ENTIDADES_DESTINATARIAS, ESTADOS_RESPOSTA, PRIORIDADES } from "@/lib/types";
+import type { Categoria, DenunciaDetailOut, EstadoResposta, Prioridade } from "@/lib/types";
 
 export default function DenunciaDetailPage() {
   const params = useParams<{ id: string }>();
@@ -28,6 +30,9 @@ export default function DenunciaDetailPage() {
   const [categoriaValidada, setCategoriaValidada] = useState<Categoria | "">("");
   const [prioridadeValidada, setPrioridadeValidada] = useState<Prioridade | "">("");
   const [observacoes, setObservacoes] = useState("");
+  const [entidadeDestinataria, setEntidadeDestinataria] = useState("");
+  const [numeroOficio, setNumeroOficio] = useState("");
+  const [respostaEstado, setRespostaEstado] = useState<EstadoResposta | "">("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -40,6 +45,9 @@ export default function DenunciaDetailPage() {
       setCategoriaValidada(data.categoria_validada ?? data.categoria_llm ?? "");
       setPrioridadeValidada(data.prioridade_validada ?? data.prioridade_llm ?? "");
       setObservacoes(data.observacoes_tecnico ?? "");
+      setEntidadeDestinataria("");
+      setNumeroOficio("");
+      setRespostaEstado("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível carregar a denúncia.");
     } finally {
@@ -55,13 +63,21 @@ export default function DenunciaDetailPage() {
   }, [carregar]);
 
   async function runAction(
-    action: "validar" | "encaminhar" | "rejeitar" | "arquivar" | "guardar"
+    action: "validar" | "encaminhar" | "rejeitar" | "arquivar" | "guardar" | "resposta"
   ) {
     if (!denuncia) return;
     setActionError(null);
 
     if (action === "validar" && !categoriaValidada) {
       setActionError("Selecione a categoria validada antes de validar a denúncia.");
+      return;
+    }
+    if (action === "encaminhar" && (!entidadeDestinataria.trim() || !numeroOficio.trim())) {
+      setActionError("Indique a entidade destinatária e o número de ofício para encaminhar.");
+      return;
+    }
+    if (action === "resposta" && !respostaEstado) {
+      setActionError("Selecione o estado da resposta.");
       return;
     }
 
@@ -78,6 +94,17 @@ export default function DenunciaDetailPage() {
         updated = await apiPost<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}/validar`, {
           categoria_validada: categoriaValidada,
           prioridade_validada: prioridadeValidada || "MEDIA",
+          observacoes_tecnico: observacoes,
+        });
+      } else if (action === "encaminhar") {
+        updated = await apiPost<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}/encaminhar`, {
+          entidade_destinataria: entidadeDestinataria.trim(),
+          numero_oficio: numeroOficio.trim(),
+          observacoes_tecnico: observacoes,
+        });
+      } else if (action === "resposta") {
+        updated = await apiPost<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}/resposta`, {
+          estado_resposta: respostaEstado,
           observacoes_tecnico: observacoes,
         });
       } else {
@@ -106,7 +133,8 @@ export default function DenunciaDetailPage() {
   }
 
   const podeEncaminhar = denuncia.estado === "VALIDADA";
-  const jaFinalizada = ["ENCAMINHADA", "EM_INVESTIGACAO", "ARQUIVADA", "REJEITADA"].includes(denuncia.estado);
+  const podeRegistarResposta = denuncia.estado === "ENCAMINHADA" || denuncia.estado === "EM_INVESTIGACAO";
+  const jaFinalizada = denuncia.estado === "ARQUIVADA" || denuncia.estado === "REJEITADA";
 
   return (
     <div>
@@ -121,6 +149,11 @@ export default function DenunciaDetailPage() {
           {(denuncia.prioridade_validada ?? denuncia.prioridade_llm) && (
             <Badge className={prioridadeBadgeClass(denuncia.prioridade_validada ?? denuncia.prioridade_llm)}>
               Prioridade {PRIORIDADE_LABEL[(denuncia.prioridade_validada ?? denuncia.prioridade_llm)!]}
+            </Badge>
+          )}
+          {denuncia.estado_resposta && (
+            <Badge className={estadoRespostaBadgeClass(denuncia.estado_resposta, denuncia.forwarded_at)}>
+              Resposta: {ESTADO_RESPOSTA_LABEL[denuncia.estado_resposta]}
             </Badge>
           )}
         </div>
@@ -274,7 +307,7 @@ export default function DenunciaDetailPage() {
             <select
               value={categoriaValidada}
               onChange={(e) => setCategoriaValidada(e.target.value as Categoria)}
-              disabled={jaFinalizada}
+              disabled={jaFinalizada || podeRegistarResposta}
               className="w-full rounded-md border border-border-strong bg-bg-alt px-3.5 py-2.5 text-sm text-ink disabled:opacity-60"
             >
               <option value="">Selecionar categoria</option>
@@ -298,7 +331,7 @@ export default function DenunciaDetailPage() {
               {PRIORIDADES.map((p) => (
                 <button
                   key={p}
-                  disabled={jaFinalizada}
+                  disabled={jaFinalizada || podeRegistarResposta}
                   onClick={() => setPrioridadeValidada(p)}
                   className={clsx(
                     "rounded-md border px-2 py-2 text-xs font-medium disabled:opacity-60",
@@ -325,9 +358,39 @@ export default function DenunciaDetailPage() {
             />
           </div>
 
+          {podeEncaminhar && (
+            <div className="space-y-3 rounded-md border border-green/30 bg-green-soft p-4">
+              <p className="text-sm font-semibold text-ink">Dados do encaminhamento</p>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink-soft">Entidade destinatária</span>
+                <input
+                  list="entidades-destinatarias"
+                  value={entidadeDestinataria}
+                  onChange={(e) => setEntidadeDestinataria(e.target.value)}
+                  placeholder="Ex.: Procuradoria-Geral da República"
+                  className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-sm text-ink"
+                />
+                <datalist id="entidades-destinatarias">
+                  {ENTIDADES_DESTINATARIAS.map((e) => (
+                    <option key={e} value={e} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-ink-soft">Número de ofício</span>
+                <input
+                  value={numeroOficio}
+                  onChange={(e) => setNumeroOficio(e.target.value)}
+                  placeholder="Ex.: OF/123/26"
+                  className="protocol-code w-full rounded-md border border-border-strong bg-card px-3 py-2 text-sm text-ink"
+                />
+              </label>
+            </div>
+          )}
+
           {actionError && <p className="text-sm text-red">{actionError}</p>}
 
-          {!jaFinalizada && (
+          {!jaFinalizada && !podeRegistarResposta && (
             <div className="space-y-2.5">
               <button
                 onClick={() => runAction("validar")}
@@ -362,6 +425,45 @@ export default function DenunciaDetailPage() {
               </div>
             </div>
           )}
+
+          {podeRegistarResposta && (
+            <div className="space-y-3">
+              <div className="rounded-md bg-bg-alt p-3 text-sm text-ink-soft">
+                Encaminhada para <span className="font-medium text-ink">{denuncia.entidade_destinataria}</span>
+                {denuncia.numero_oficio && <span className="protocol-code"> ({denuncia.numero_oficio})</span>}.
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Registar resposta da entidade</span>
+                <select
+                  value={respostaEstado}
+                  onChange={(e) => setRespostaEstado(e.target.value as EstadoResposta)}
+                  className="w-full rounded-md border border-border-strong bg-bg-alt px-3.5 py-2.5 text-sm text-ink"
+                >
+                  <option value="">Selecionar estado da resposta</option>
+                  {ESTADOS_RESPOSTA.filter((e) => e !== "ARQUIVADO").map((e) => (
+                    <option key={e} value={e}>
+                      {ESTADO_RESPOSTA_LABEL[e]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                onClick={() => runAction("resposta")}
+                disabled={actionLoading !== null}
+                className="w-full rounded-md bg-green px-4 py-2.5 text-sm font-semibold text-bg hover:bg-green-dark disabled:opacity-60"
+              >
+                {actionLoading === "resposta" ? "A registar…" : "Registar resposta"}
+              </button>
+              <button
+                onClick={() => runAction("arquivar")}
+                disabled={actionLoading !== null}
+                className="w-full rounded-md border border-border-strong px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink disabled:opacity-60"
+              >
+                Arquivar processo
+              </button>
+            </div>
+          )}
+
           {jaFinalizada && (
             <p className="rounded-md bg-bg-alt p-3 text-sm text-ink-soft">
               Este processo já se encontra em estado final ({ESTADO_LABEL[denuncia.estado]}) e não

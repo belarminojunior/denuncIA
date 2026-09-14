@@ -38,6 +38,29 @@ class EstadoDenuncia(str, enum.Enum):
     REJEITADA = "REJEITADA"
 
 
+class EstadoResposta(str, enum.Enum):
+    """Estado da resposta da entidade externa a um processo encaminhado.
+
+    Distinto de `EstadoDenuncia`: acompanha o que acontece depois do
+    encaminhamento, junto da entidade destinatária — não decide o estado
+    interno do processo no GCCC.
+    """
+
+    AGUARDA = "AGUARDA"
+    RESPONDIDO = "RESPONDIDO"
+    ACUSACAO = "ACUSACAO"
+    ARQUIVADO = "ARQUIVADO"
+
+
+ENTIDADES_DESTINATARIAS = [
+    "Procuradoria-Geral da República",
+    "Inspeção-Geral de Finanças",
+    "Tribunal Administrativo",
+    "Autoridade Tributária",
+    "Comissão Nacional de Eleições",
+]
+
+
 class Denuncia(Base):
     __tablename__ = "denuncias"
 
@@ -74,6 +97,12 @@ class Denuncia(Base):
 
     estado: Mapped[EstadoDenuncia] = mapped_column(Enum(EstadoDenuncia), default=EstadoDenuncia.RECEBIDA)
     tecnico_responsavel_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+
+    # Encaminhamento para entidade externa (preenchido apenas ao encaminhar)
+    entidade_destinataria: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    numero_oficio: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    estado_resposta: Mapped[EstadoResposta | None] = mapped_column(Enum(EstadoResposta), nullable=True)
+    data_resposta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

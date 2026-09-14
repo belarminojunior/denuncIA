@@ -11,9 +11,9 @@ import type { UserOut } from "@/lib/types";
 const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, enabled: true },
   { href: "/admin/denuncias", label: "Denúncias", icon: FileSearch, enabled: true },
-  { href: "/admin/encaminhamentos", label: "Encaminhamentos", icon: Send, enabled: false },
-  { href: "/admin/auditoria", label: "Auditoria", icon: ShieldCheck, enabled: false },
-  { href: "/admin/utilizadores", label: "Utilizadores", icon: Users, enabled: false },
+  { href: "/admin/encaminhamentos", label: "Encaminhamentos", icon: Send, enabled: true },
+  { href: "/admin/auditoria", label: "Auditoria", icon: ShieldCheck, enabled: true },
+  { href: "/admin/utilizadores", label: "Utilizadores", icon: Users, enabled: true },
 ];
 
 export default function AdminProtectedLayout({ children }: { children: React.ReactNode }) {

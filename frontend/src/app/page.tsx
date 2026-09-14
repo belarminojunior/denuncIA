@@ -160,7 +160,12 @@ export default function HomePage() {
         <section id="faq" className="mx-auto max-w-7xl px-6 pb-20">
           <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
             <div>
-              <h2 className="text-3xl text-ink">Perguntas frequentes</h2>
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-3xl text-ink">Perguntas frequentes</h2>
+                <Link href="/faq" className="text-sm text-green hover:underline">
+                  Ver todas as perguntas →
+                </Link>
+              </div>
               <div className="mt-6 divide-y divide-border rounded-xl border border-border bg-card">
                 {FAQ.map((item) => (
                   <div key={item.q} className="p-5">

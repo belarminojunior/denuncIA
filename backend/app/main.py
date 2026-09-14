@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import admin_denuncias, auth, chatbot, dashboard, denuncias
+from app.routers import admin_denuncias, auditoria, auth, chatbot, dashboard, denuncias, encaminhamentos, users
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
@@ -46,7 +46,10 @@ async def http_exception_handler(request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # exc.errors() pode incluir em 'ctx' a exceção Python original (não serializável em
+    # JSON); mantemos apenas os campos serializáveis (loc/msg/type) para a resposta.
+    errors = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.exception_handler(Exception)
@@ -60,6 +63,9 @@ app.include_router(denuncias.router)
 app.include_router(admin_denuncias.router)
 app.include_router(dashboard.router)
 app.include_router(chatbot.router)
+app.include_router(encaminhamentos.router)
+app.include_router(auditoria.router)
+app.include_router(users.router)
 
 
 @app.get("/api/health")

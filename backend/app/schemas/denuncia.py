@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
-from app.models.denuncia import Categoria, EstadoDenuncia, Prioridade
+from app.models.denuncia import Categoria, EstadoDenuncia, EstadoResposta, Prioridade
 
 
 class DenunciaCreateData(BaseModel):
@@ -48,7 +48,8 @@ class AttachmentOut(BaseModel):
 
 
 class AuditLogOut(BaseModel):
-    id: str
+    id: int
+    tipo: str
     acao: str
     estado_anterior: str | None
     estado_novo: str | None
@@ -87,6 +88,8 @@ class DenunciaListItemOut(BaseModel):
     prioridade_validada: Prioridade | None
     estado: EstadoDenuncia
     local_ocorrencia: str | None
+    entidade_destinataria: str | None = None
+    estado_resposta: EstadoResposta | None = None
 
     model_config = {"from_attributes": True}
 
@@ -128,6 +131,11 @@ class DenunciaDetailOut(BaseModel):
     estado: EstadoDenuncia
     tecnico_responsavel_nome: str | None = None
 
+    entidade_destinataria: str | None = None
+    numero_oficio: str | None = None
+    estado_resposta: EstadoResposta | None = None
+    data_resposta: datetime | None = None
+
     created_at: datetime
     updated_at: datetime
     validated_at: datetime | None
@@ -149,7 +157,58 @@ class AcaoDenunciaRequest(BaseModel):
     observacoes_tecnico: str | None = None
 
 
+class EncaminharDenunciaRequest(BaseModel):
+    entidade_destinataria: str
+    numero_oficio: str
+    observacoes_tecnico: str | None = None
+
+    @field_validator("entidade_destinataria", "numero_oficio")
+    @classmethod
+    def campo_obrigatorio(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Campo obrigatório para encaminhar a denúncia.")
+        return v
+
+
+class RespostaEncaminhamentoRequest(BaseModel):
+    estado_resposta: EstadoResposta
+    observacoes_tecnico: str | None = None
+
+
 class AtualizarDenunciaRequest(BaseModel):
     categoria_validada: Categoria | None = None
     prioridade_validada: Prioridade | None = None
     observacoes_tecnico: str | None = None
+
+
+class EncaminhamentoItemOut(BaseModel):
+    id: str
+    protocolo: str
+    entidade_destinataria: str
+    numero_oficio: str | None
+    forwarded_at: datetime
+    estado: EstadoDenuncia
+    estado_resposta: EstadoResposta
+    data_resposta: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class EncaminhamentoListOut(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[EncaminhamentoItemOut]
+
+
+class EncaminhamentoStatsOut(BaseModel):
+    total_encaminhados: int
+    sem_resposta_30_dias: int
+    com_acusacao: int
+    prazo_medio_resposta_dias: float | None
+
+
+class EncaminhamentoPorEntidadeOut(BaseModel):
+    entidade: str
+    total: int

@@ -20,9 +20,18 @@ from app.utils.validators import sanitize_filename, validate_upload_file
 router = APIRouter(prefix="/api/denuncias", tags=["denuncias"])
 settings = get_settings()
 
-# Estados que o cidadão pode legitimamente ver ao consultar o protocolo.
-# Não expomos dados internos (categoria sugerida pelo LLM, técnico responsável, etc.).
-_HISTORICO_PUBLICO_ACOES_OCULTAS = {"Técnico atualizou observações/classificação"}
+# Descrições genéricas por estado, sem nomes de técnicos nem observações internas —
+# o histórico devolvido ao cidadão nunca reutiliza o texto interno de `acao`.
+_DESCRICAO_PUBLICA_POR_ESTADO = {
+    "RECEBIDA": "Denúncia recebida",
+    "PENDENTE_VALIDACAO": "Classificação preliminar concluída",
+    "EM_ANALISE": "Processo em análise por um técnico",
+    "VALIDADA": "Classificação confirmada por um técnico",
+    "ENCAMINHADA": "Encaminhada para a entidade competente",
+    "EM_INVESTIGACAO": "Em investigação pela entidade competente",
+    "ARQUIVADA": "Processo arquivado",
+    "REJEITADA": "Denúncia rejeitada",
+}
 
 
 @router.post("", response_model=DenunciaSubmetidaOut, status_code=status.HTTP_201_CREATED)
@@ -101,14 +110,15 @@ def consultar_protocolo(protocolo: str, db: Session = Depends(get_db)):
     historico = [
         AuditLogOut(
             id=log.id,
-            acao=log.acao,
+            tipo=log.tipo.value,
+            acao=_DESCRICAO_PUBLICA_POR_ESTADO.get(log.estado_novo, "Estado do processo atualizado"),
             estado_anterior=log.estado_anterior,
             estado_novo=log.estado_novo,
             observacao=None,
             created_at=log.created_at,
         )
         for log in denuncia.audit_logs
-        if log.acao not in _HISTORICO_PUBLICO_ACOES_OCULTAS
+        if log.estado_novo is not None and log.estado_novo != log.estado_anterior
     ]
 
     return ProtocoloStatusOut(

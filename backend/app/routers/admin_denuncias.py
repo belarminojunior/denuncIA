@@ -17,6 +17,8 @@ from app.schemas.denuncia import (
     DenunciaDetailOut,
     DenunciaListItemOut,
     DenunciaListOut,
+    EncaminharDenunciaRequest,
+    RespostaEncaminhamentoRequest,
     ValidarDenunciaRequest,
 )
 from app.services import denuncia_service
@@ -52,6 +54,10 @@ def _to_detail_out(denuncia: Denuncia) -> DenunciaDetailOut:
         observacoes_tecnico=denuncia.observacoes_tecnico,
         estado=denuncia.estado,
         tecnico_responsavel_nome=denuncia.tecnico_responsavel.name if denuncia.tecnico_responsavel else None,
+        entidade_destinataria=denuncia.entidade_destinataria,
+        numero_oficio=denuncia.numero_oficio,
+        estado_resposta=denuncia.estado_resposta,
+        data_resposta=denuncia.data_resposta,
         created_at=denuncia.created_at,
         updated_at=denuncia.updated_at,
         validated_at=denuncia.validated_at,
@@ -60,6 +66,7 @@ def _to_detail_out(denuncia: Denuncia) -> DenunciaDetailOut:
         audit_logs=[
             AuditLogOut(
                 id=log.id,
+                tipo=log.tipo.value,
                 acao=log.acao,
                 estado_anterior=log.estado_anterior,
                 estado_novo=log.estado_novo,
@@ -162,12 +169,28 @@ def validar_denuncia(
 @router.post("/{denuncia_id}/encaminhar", response_model=DenunciaDetailOut)
 def encaminhar_denuncia(
     denuncia_id: str,
-    payload: AcaoDenunciaRequest,
+    payload: EncaminharDenunciaRequest,
     db: Session = Depends(get_db),
     tecnico: User = Depends(get_current_user),
 ):
     denuncia = denuncia_service.obter_por_id(db, denuncia_id)
-    denuncia = denuncia_service.encaminhar_denuncia(db, denuncia, tecnico, payload.observacoes_tecnico)
+    denuncia = denuncia_service.encaminhar_denuncia(
+        db, denuncia, tecnico, payload.entidade_destinataria, payload.numero_oficio, payload.observacoes_tecnico
+    )
+    return _to_detail_out(denuncia)
+
+
+@router.post("/{denuncia_id}/resposta", response_model=DenunciaDetailOut)
+def registar_resposta(
+    denuncia_id: str,
+    payload: RespostaEncaminhamentoRequest,
+    db: Session = Depends(get_db),
+    tecnico: User = Depends(get_current_user),
+):
+    denuncia = denuncia_service.obter_por_id(db, denuncia_id)
+    denuncia = denuncia_service.registar_resposta(
+        db, denuncia, tecnico, payload.estado_resposta, payload.observacoes_tecnico
+    )
     return _to_detail_out(denuncia)
 
 
@@ -200,7 +223,7 @@ def download_anexo(
     denuncia_id: str,
     attachment_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    tecnico: User = Depends(get_current_user),
 ):
     attachment = (
         db.query(Attachment)
@@ -209,4 +232,6 @@ def download_anexo(
     )
     if attachment is None or not os.path.isfile(attachment.filepath):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anexo não encontrado.")
+    denuncia = denuncia_service.obter_por_id(db, denuncia_id)
+    denuncia_service.registar_acesso_anexo(db, denuncia, tecnico, attachment.filename)
     return FileResponse(attachment.filepath, media_type=attachment.mimetype, filename=attachment.filename)
