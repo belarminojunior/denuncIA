@@ -17,8 +17,6 @@ from app.schemas.denuncia import (
     DenunciaDetailOut,
     DenunciaListItemOut,
     DenunciaListOut,
-    EncaminharDenunciaRequest,
-    RespostaEncaminhamentoRequest,
     ValidarDenunciaRequest,
 )
 from app.services import denuncia_service
@@ -54,10 +52,6 @@ def _to_detail_out(denuncia: Denuncia) -> DenunciaDetailOut:
         observacoes_tecnico=denuncia.observacoes_tecnico,
         estado=denuncia.estado,
         tecnico_responsavel_nome=denuncia.tecnico_responsavel.name if denuncia.tecnico_responsavel else None,
-        entidade_destinataria=denuncia.entidade_destinataria,
-        numero_oficio=denuncia.numero_oficio,
-        estado_resposta=denuncia.estado_resposta,
-        data_resposta=denuncia.data_resposta,
         created_at=denuncia.created_at,
         updated_at=denuncia.updated_at,
         validated_at=denuncia.validated_at,
@@ -169,28 +163,24 @@ def validar_denuncia(
 @router.post("/{denuncia_id}/encaminhar", response_model=DenunciaDetailOut)
 def encaminhar_denuncia(
     denuncia_id: str,
-    payload: EncaminharDenunciaRequest,
+    payload: AcaoDenunciaRequest,
     db: Session = Depends(get_db),
     tecnico: User = Depends(get_current_user),
 ):
     denuncia = denuncia_service.obter_por_id(db, denuncia_id)
-    denuncia = denuncia_service.encaminhar_denuncia(
-        db, denuncia, tecnico, payload.entidade_destinataria, payload.numero_oficio, payload.observacoes_tecnico
-    )
+    denuncia = denuncia_service.encaminhar_denuncia(db, denuncia, tecnico, payload.observacoes_tecnico)
     return _to_detail_out(denuncia)
 
 
-@router.post("/{denuncia_id}/resposta", response_model=DenunciaDetailOut)
-def registar_resposta(
+@router.post("/{denuncia_id}/investigar", response_model=DenunciaDetailOut)
+def investigar_denuncia(
     denuncia_id: str,
-    payload: RespostaEncaminhamentoRequest,
+    payload: AcaoDenunciaRequest,
     db: Session = Depends(get_db),
     tecnico: User = Depends(get_current_user),
 ):
     denuncia = denuncia_service.obter_por_id(db, denuncia_id)
-    denuncia = denuncia_service.registar_resposta(
-        db, denuncia, tecnico, payload.estado_resposta, payload.observacoes_tecnico
-    )
+    denuncia = denuncia_service.investigar_denuncia(db, denuncia, tecnico, payload.observacoes_tecnico)
     return _to_detail_out(denuncia)
 
 

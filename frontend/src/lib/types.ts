@@ -46,18 +46,6 @@ export const ESTADOS: EstadoDenuncia[] = [
   "REJEITADA",
 ];
 
-export type EstadoResposta = "AGUARDA" | "RESPONDIDO" | "ACUSACAO" | "ARQUIVADO";
-
-export const ESTADOS_RESPOSTA: EstadoResposta[] = ["AGUARDA", "RESPONDIDO", "ACUSACAO", "ARQUIVADO"];
-
-export const ENTIDADES_DESTINATARIAS = [
-  "Procuradoria-Geral da República",
-  "Inspeção-Geral de Finanças",
-  "Tribunal Administrativo",
-  "Autoridade Tributária",
-  "Comissão Nacional de Eleições",
-];
-
 export type TipoOperacao =
   | "CRIACAO"
   | "CLASSIFICACAO_LLM"
@@ -137,8 +125,6 @@ export interface DenunciaListItemOut {
   prioridade_validada: Prioridade | null;
   estado: EstadoDenuncia;
   local_ocorrencia: string | null;
-  entidade_destinataria?: string | null;
-  estado_resposta?: EstadoResposta | null;
 }
 
 export interface DenunciaListOut {
@@ -178,11 +164,6 @@ export interface DenunciaDetailOut {
   estado: EstadoDenuncia;
   tecnico_responsavel_nome: string | null;
 
-  entidade_destinataria: string | null;
-  numero_oficio: string | null;
-  estado_resposta: EstadoResposta | null;
-  data_resposta: string | null;
-
   created_at: string;
   updated_at: string;
   validated_at: string | null;
@@ -190,36 +171,6 @@ export interface DenunciaDetailOut {
 
   attachments: AttachmentOut[];
   audit_logs: AuditLogOut[];
-}
-
-export interface EncaminhamentoItemOut {
-  id: string;
-  protocolo: string;
-  entidade_destinataria: string;
-  numero_oficio: string | null;
-  forwarded_at: string;
-  estado: EstadoDenuncia;
-  estado_resposta: EstadoResposta;
-  data_resposta: string | null;
-}
-
-export interface EncaminhamentoListOut {
-  total: number;
-  page: number;
-  page_size: number;
-  items: EncaminhamentoItemOut[];
-}
-
-export interface EncaminhamentoStatsOut {
-  total_encaminhados: number;
-  sem_resposta_30_dias: number;
-  com_acusacao: number;
-  prazo_medio_resposta_dias: number | null;
-}
-
-export interface EncaminhamentoPorEntidadeOut {
-  entidade: string;
-  total: number;
 }
 
 export interface UserOut {

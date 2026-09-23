@@ -1,6 +1,5 @@
 import { Suspense } from "react";
-import { SiteHeader } from "@/components/site/SiteHeader";
-import { SiteFooter } from "@/components/site/SiteFooter";
+import { PublicShell } from "@/components/site/PublicShell";
 import { ConsultarForm } from "@/components/denuncia/ConsultarForm";
 
 export const metadata = {
@@ -9,14 +8,10 @@ export const metadata = {
 
 export default function ConsultarPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-      <main className="flex-1">
-        <Suspense fallback={null}>
-          <ConsultarForm />
-        </Suspense>
-      </main>
-      <SiteFooter />
-    </div>
+    <PublicShell>
+      <Suspense fallback={null}>
+        <ConsultarForm />
+      </Suspense>
+    </PublicShell>
   );
 }

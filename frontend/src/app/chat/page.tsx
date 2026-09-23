@@ -1,5 +1,4 @@
-import { SiteHeader } from "@/components/site/SiteHeader";
-import { SiteFooter } from "@/components/site/SiteFooter";
+import { PublicShell } from "@/components/site/PublicShell";
 import { ChatAssistant } from "@/components/denuncia/ChatAssistant";
 
 export const metadata = {
@@ -8,12 +7,8 @@ export const metadata = {
 
 export default function ChatPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-      <main className="flex-1">
-        <ChatAssistant />
-      </main>
-      <SiteFooter />
-    </div>
+    <PublicShell showChatWidget={false}>
+      <ChatAssistant />
+    </PublicShell>
   );
 }

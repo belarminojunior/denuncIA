@@ -27,8 +27,8 @@ _DESCRICAO_PUBLICA_POR_ESTADO = {
     "PENDENTE_VALIDACAO": "Classificação preliminar concluída",
     "EM_ANALISE": "Processo em análise por um técnico",
     "VALIDADA": "Classificação confirmada por um técnico",
-    "ENCAMINHADA": "Encaminhada para a entidade competente",
-    "EM_INVESTIGACAO": "Em investigação pela entidade competente",
+    "ENCAMINHADA": "Encaminhada para tratamento no GCCC",
+    "EM_INVESTIGACAO": "Em investigação",
     "ARQUIVADA": "Processo arquivado",
     "REJEITADA": "Denúncia rejeitada",
 }

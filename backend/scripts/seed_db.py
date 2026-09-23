@@ -1,8 +1,8 @@
 """Popula a base de dados com denúncias, utilizadores e histórico fictícios para demonstração.
 
-As denúncias, entidades e contas aqui descritas são inteiramente fictícias, criadas
-apenas para demonstrar o dashboard, os filtros, os encaminhamentos, a auditoria e o
-fluxo de validação do protótipo. Não correspondem a factos nem pessoas reais.
+As denúncias e contas aqui descritas são inteiramente fictícias, criadas apenas
+para demonstrar o dashboard, a auditoria e o fluxo de validação do protótipo.
+Não correspondem a factos nem pessoas reais.
 
 Uso:
     python scripts/seed_db.py
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models.audit_log import AuditLog, TipoOperacao  # noqa: E402
-from app.models.denuncia import Categoria, Denuncia, EstadoDenuncia, EstadoResposta, Prioridade  # noqa: E402
+from app.models.denuncia import Categoria, Denuncia, EstadoDenuncia, Prioridade  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -80,10 +80,6 @@ _SEED = [
             "oficial, para liberar mercadoria já com os documentos em ordem."
         ),
         validar=True,
-        entidade="Autoridade Tributária",
-        oficio="OF/265/26",
-        resposta_estado=EstadoResposta.ARQUIVADO,
-        resposta_dias=5,
     ),
     dict(
         dias_atras=8,
@@ -97,10 +93,6 @@ _SEED = [
             "de campanha, com fotografias que mostram a entrega dos bens."
         ),
         validar=True,
-        entidade="Comissão Nacional de Eleições",
-        oficio="OF/398/26",
-        resposta_estado=EstadoResposta.RESPONDIDO,
-        resposta_dias=3,
     ),
     dict(
         dias_atras=6,
@@ -127,9 +119,6 @@ _SEED = [
             "a adjudicação de um contrato de obras mediante uma percentagem do valor."
         ),
         validar=True,
-        entidade="Inspeção-Geral de Finanças",
-        oficio="OF/381/26",
-        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=4,
@@ -169,9 +158,6 @@ _SEED = [
             "uma decisão em troca de um pagamento adicional não faturado."
         ),
         validar=True,
-        entidade="Procuradoria-Geral da República",
-        oficio="OF/412/26",
-        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=1,
@@ -198,9 +184,6 @@ _SEED = [
             "estabelecimento concorrente de um negócio ligado a um agente da autoridade."
         ),
         validar=True,
-        entidade="Procuradoria-Geral da República",
-        oficio="OF/330/26",
-        resposta_estado=EstadoResposta.AGUARDA,
     ),
     dict(
         dias_atras=0,
@@ -257,6 +240,8 @@ _SEED = [
         anonima=True,
     ),
 ]
+
+_ESTADOS_PARA_ENCAMINHAR = (EstadoDenuncia.ENCAMINHADA, EstadoDenuncia.EM_INVESTIGACAO, EstadoDenuncia.ARQUIVADA)
 
 
 def _protocolo(indice: int) -> str:
@@ -320,17 +305,8 @@ def main() -> None:
                 denuncia.observacoes_tecnico = "Classificação confirmada após análise do relato e dos anexos."
                 denuncia.tecnico_responsavel_id = tecnico.id
                 denuncia.validated_at = criado_em + timedelta(hours=2)
-                if item["estado"] in (EstadoDenuncia.ENCAMINHADA, EstadoDenuncia.EM_INVESTIGACAO, EstadoDenuncia.ARQUIVADA):
+                if item["estado"] in _ESTADOS_PARA_ENCAMINHAR:
                     denuncia.forwarded_at = criado_em + timedelta(hours=3)
-
-            entidade = item.get("entidade")
-            if entidade:
-                denuncia.entidade_destinataria = entidade
-                denuncia.numero_oficio = item.get("oficio")
-                denuncia.estado_resposta = item.get("resposta_estado", EstadoResposta.AGUARDA)
-                resposta_dias = item.get("resposta_dias")
-                if resposta_dias is not None and denuncia.forwarded_at is not None:
-                    denuncia.data_resposta = denuncia.forwarded_at + timedelta(days=resposta_dias)
 
             db.add(denuncia)
             db.flush()
@@ -382,28 +358,42 @@ def main() -> None:
                         created_at=criado_em + timedelta(hours=2),
                     )
                 )
-            if entidade:
+            if item["estado"] in _ESTADOS_PARA_ENCAMINHAR:
                 db.add(
                     AuditLog(
                         denuncia_id=denuncia.id,
                         tipo=TipoOperacao.ENCAMINHAMENTO,
-                        acao=f"{tecnico.name} encaminhou para {entidade} ({item.get('oficio')})",
+                        acao=f"{tecnico.name} encaminhou a denúncia para tratamento no GCCC",
                         user_id=tecnico.id,
                         estado_anterior=EstadoDenuncia.VALIDADA.value,
                         estado_novo=EstadoDenuncia.ENCAMINHADA.value,
                         created_at=criado_em + timedelta(hours=3),
                     )
                 )
-                if denuncia.data_resposta is not None:
-                    db.add(
-                        AuditLog(
-                            denuncia_id=denuncia.id,
-                            tipo=TipoOperacao.ENCAMINHAMENTO,
-                            acao=f"{tecnico.name} registou resposta de {entidade}: {denuncia.estado_resposta.value}",
-                            user_id=tecnico.id,
-                            created_at=denuncia.data_resposta,
-                        )
+            if item["estado"] in (EstadoDenuncia.EM_INVESTIGACAO, EstadoDenuncia.ARQUIVADA):
+                db.add(
+                    AuditLog(
+                        denuncia_id=denuncia.id,
+                        tipo=TipoOperacao.ALTERACAO_ESTADO,
+                        acao=f"{tecnico.name} marcou a denúncia como em investigação",
+                        user_id=tecnico.id,
+                        estado_anterior=EstadoDenuncia.ENCAMINHADA.value,
+                        estado_novo=EstadoDenuncia.EM_INVESTIGACAO.value,
+                        created_at=criado_em + timedelta(hours=4),
                     )
+                )
+            if item["estado"] == EstadoDenuncia.ARQUIVADA:
+                db.add(
+                    AuditLog(
+                        denuncia_id=denuncia.id,
+                        tipo=TipoOperacao.ALTERACAO_ESTADO,
+                        acao=f"{tecnico.name} arquivou a denúncia",
+                        user_id=tecnico.id,
+                        estado_anterior=EstadoDenuncia.EM_INVESTIGACAO.value,
+                        estado_novo=EstadoDenuncia.ARQUIVADA.value,
+                        created_at=criado_em + timedelta(hours=5),
+                    )
+                )
 
         db.commit()
         print(f"{len(_UTILIZADORES)} utilizadores e {len(_SEED)} denúncias fictícias criadas com sucesso.")

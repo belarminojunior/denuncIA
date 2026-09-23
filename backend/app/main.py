@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import admin_denuncias, auditoria, auth, chatbot, dashboard, denuncias, encaminhamentos, users
+from app.routers import admin_denuncias, auditoria, auth, chatbot, dashboard, denuncias, users
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
@@ -63,7 +63,6 @@ app.include_router(denuncias.router)
 app.include_router(admin_denuncias.router)
 app.include_router(dashboard.router)
 app.include_router(chatbot.router)
-app.include_router(encaminhamentos.router)
 app.include_router(auditoria.router)
 app.include_router(users.router)
 

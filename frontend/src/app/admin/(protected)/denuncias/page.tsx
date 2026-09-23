@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import {
   CATEGORIA_LABEL,
@@ -46,13 +47,13 @@ export default function DenunciasListPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
-    <div>
-      <h1 className="text-3xl text-ink">Denúncias</h1>
-      <p className="mt-1 text-sm text-ink-soft">
-        {data ? `${data.total} registos` : "…"} · dados fictícios para demonstração
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Denúncias"
+        subtitle={`${data ? `${data.total} registos` : "…"} · dados fictícios para demonstração`}
+      />
 
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
         <input
           value={search}
           onChange={(e) => {
@@ -109,7 +110,7 @@ export default function DenunciasListPage() {
         </select>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">

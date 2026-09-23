@@ -1,8 +1,10 @@
 """Regras de negócio do ciclo de vida da denúncia.
 
 Fluxo: RECEBIDA -> PENDENTE_VALIDACAO (após classificação do LLM) -> EM_ANALISE
-(quando um técnico abre o processo) -> VALIDADA -> ENCAMINHADA -> EM_INVESTIGACAO,
-com possibilidade de ARQUIVADA ou REJEITADA a partir da análise.
+(quando um técnico abre o processo) -> VALIDADA -> ENCAMINHADA (aceite no
+sistema de gestão do GCCC para tratamento) -> EM_INVESTIGACAO (opcional) ->
+ARQUIVADA, com possibilidade de REJEITADA a partir de qualquer ponto anterior
+ao arquivamento.
 
 O LLM nunca decide o estado final: apenas fornece `categoria_llm`/`prioridade_llm`
 como sugestão. A validação humana (`categoria_validada`/`prioridade_validada`) é
@@ -15,7 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import TipoOperacao
-from app.models.denuncia import Denuncia, EstadoDenuncia, EstadoResposta
+from app.models.denuncia import Denuncia, EstadoDenuncia
 from app.models.user import User
 from app.schemas.denuncia import DenunciaCreateData
 from app.services import audit_service
@@ -175,14 +177,12 @@ def validar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, categoria_v
     return denuncia
 
 
-def encaminhar_denuncia(
-    db: Session,
-    denuncia: Denuncia,
-    tecnico: User,
-    entidade_destinataria: str,
-    numero_oficio: str,
-    observacoes_tecnico: str | None,
-):
+def encaminhar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoes_tecnico: str | None):
+    """Aceita formalmente a denúncia validada no sistema de gestão do GCCC.
+
+    Não envolve nenhuma entidade externa — é a transição interna que marca a
+    denúncia como assumida para tratamento, depois de validada.
+    """
     if denuncia.categoria_validada is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -194,15 +194,11 @@ def encaminhar_denuncia(
     denuncia.estado = EstadoDenuncia.ENCAMINHADA
     denuncia.tecnico_responsavel_id = tecnico.id
     denuncia.forwarded_at = datetime.utcnow()
-    denuncia.entidade_destinataria = entidade_destinataria
-    denuncia.numero_oficio = numero_oficio
-    denuncia.estado_resposta = EstadoResposta.AGUARDA
-    denuncia.data_resposta = None
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao=f"{tecnico.name} encaminhou para {entidade_destinataria} ({numero_oficio})",
+        acao=f"{tecnico.name} encaminhou a denúncia para tratamento no GCCC",
         tipo=TipoOperacao.ENCAMINHAMENTO,
         user_id=tecnico.id,
         estado_anterior=estado_anterior.value,
@@ -214,25 +210,22 @@ def encaminhar_denuncia(
     return denuncia
 
 
-def registar_resposta(db: Session, denuncia: Denuncia, tecnico: User, estado_resposta: EstadoResposta, observacoes_tecnico: str | None):
-    if denuncia.entidade_destinataria is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Esta denúncia ainda não foi encaminhada a nenhuma entidade.",
-        )
-    denuncia.estado_resposta = estado_resposta
-    denuncia.data_resposta = datetime.utcnow()
-    if estado_resposta == EstadoResposta.ACUSACAO and denuncia.estado != EstadoDenuncia.EM_INVESTIGACAO:
-        denuncia.estado = EstadoDenuncia.EM_INVESTIGACAO
+def investigar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoes_tecnico: str | None):
+    """Marca a denúncia encaminhada como estando sob investigação ativa."""
+    estado_anterior = denuncia.estado
+    denuncia.estado = EstadoDenuncia.EM_INVESTIGACAO
+    denuncia.tecnico_responsavel_id = tecnico.id
     if observacoes_tecnico is not None:
         denuncia.observacoes_tecnico = observacoes_tecnico
 
     audit_service.log_action(
         db,
         denuncia_id=denuncia.id,
-        acao=f"{tecnico.name} registou resposta de {denuncia.entidade_destinataria}: {estado_resposta.value}",
-        tipo=TipoOperacao.ENCAMINHAMENTO,
+        acao=f"{tecnico.name} marcou a denúncia como em investigação",
+        tipo=TipoOperacao.ALTERACAO_ESTADO,
         user_id=tecnico.id,
+        estado_anterior=estado_anterior.value,
+        estado_novo=denuncia.estado.value,
         observacao=observacoes_tecnico,
     )
     db.commit()
@@ -266,8 +259,6 @@ def arquivar_denuncia(db: Session, denuncia: Denuncia, tecnico: User, observacoe
     estado_anterior = denuncia.estado
     denuncia.estado = EstadoDenuncia.ARQUIVADA
     denuncia.tecnico_responsavel_id = tecnico.id
-    if denuncia.entidade_destinataria is not None:
-        denuncia.estado_resposta = EstadoResposta.ARQUIVADO
     if observacoes_tecnico is not None:
         denuncia.observacoes_tecnico = observacoes_tecnico
 

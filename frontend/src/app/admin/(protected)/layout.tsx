@@ -4,14 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
-import { LayoutDashboard, FileSearch, Send, ShieldCheck, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, FileSearch, ShieldCheck, Users, LogOut } from "lucide-react";
 import { getStoredUser, getToken, clearSession } from "@/lib/auth";
 import type { UserOut } from "@/lib/types";
 
 const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, enabled: true },
   { href: "/admin/denuncias", label: "Denúncias", icon: FileSearch, enabled: true },
-  { href: "/admin/encaminhamentos", label: "Encaminhamentos", icon: Send, enabled: true },
   { href: "/admin/auditoria", label: "Auditoria", icon: ShieldCheck, enabled: true },
   { href: "/admin/utilizadores", label: "Utilizadores", icon: Users, enabled: true },
 ];

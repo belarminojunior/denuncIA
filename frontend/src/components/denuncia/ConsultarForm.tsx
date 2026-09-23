@@ -2,11 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, Circle, Search } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Search, ShieldAlert, Archive } from "lucide-react";
 import clsx from "clsx";
 import { apiGet, ApiError } from "@/lib/api";
 import type { EstadoDenuncia, ProtocoloStatusOut } from "@/lib/types";
-import { ESTADO_DESCRICAO_PUBLICA, ESTADO_LABEL, formatDateTime } from "@/lib/format";
+import {
+  ESTADO_DESCRICAO_PUBLICA,
+  ESTADO_LABEL,
+  MACRO_ESTADO_LABEL,
+  formatDateTime,
+  macroEstado,
+  macroEstadoBadgeClass,
+  macroEstadoDescricao,
+} from "@/lib/format";
+
+const MACRO_ICON = {
+  EM_TRATAMENTO: Clock,
+  SOB_INVESTIGACAO: ShieldAlert,
+  FINALIZADA: Archive,
+} as const;
 
 const FLUXO_PRINCIPAL: EstadoDenuncia[] = [
   "RECEBIDA",
@@ -94,10 +108,21 @@ export function ConsultarForm() {
                 {formatDateTime(resultado.updated_at)}
               </p>
             </div>
-            <span className="rounded-md border border-border-strong bg-card px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-ink-soft">
-              {resultado.estado}
-            </span>
           </div>
+
+          {(() => {
+            const macro = macroEstado(resultado.estado);
+            const Icon = MACRO_ICON[macro];
+            return (
+              <div className={clsx("mt-5 flex items-start gap-3 rounded-lg p-4", macroEstadoBadgeClass(macro))}>
+                <Icon size={20} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide">{MACRO_ESTADO_LABEL[macro]}</p>
+                  <p className="mt-0.5 text-sm">{macroEstadoDescricao(resultado.estado)}</p>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="mt-6 border-t border-border pt-6">
             <p className="text-sm font-semibold text-ink">Percurso do processo</p>
@@ -128,7 +153,12 @@ export function ConsultarForm() {
               })}
               {forkedFora && (
                 <li className="relative">
-                  <span className="absolute -left-[1.72rem] top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber text-bg">
+                  <span
+                    className={clsx(
+                      "absolute -left-[1.72rem] top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-bg",
+                      resultado.estado === "REJEITADA" ? "bg-red" : resultado.estado === "ARQUIVADA" ? "bg-gray-badge" : "bg-amber"
+                    )}
+                  >
                     <CheckCircle2 size={14} />
                   </span>
                   <p className="text-sm font-semibold text-ink">{ESTADO_LABEL[resultado.estado]}</p>

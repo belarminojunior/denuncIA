@@ -8,8 +8,6 @@ const NAV_ITEMS = [
   { href: "/", label: "Início" },
   { href: "/denunciar", label: "Fazer denúncia" },
   { href: "/consultar", label: "Consultar denúncia" },
-  { href: "/faq", label: "Perguntas frequentes" },
-  { href: "/chat", label: "Chatbot" },
 ];
 
 export function SiteHeader() {

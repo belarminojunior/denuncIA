@@ -1,4 +1,4 @@
-import type { Categoria, EstadoDenuncia, EstadoResposta, Prioridade, TipoOperacao, UserRole } from "@/lib/types";
+import type { Categoria, EstadoDenuncia, Prioridade, TipoOperacao, UserRole } from "@/lib/types";
 
 export const CATEGORIA_LABEL: Record<Categoria, string> = {
   SUBORNO: "Suborno",
@@ -35,18 +35,44 @@ export const ESTADO_DESCRICAO_PUBLICA: Record<EstadoDenuncia, string> = {
   PENDENTE_VALIDACAO: "Classificação preliminar concluída, aguarda revisão de um técnico.",
   EM_ANALISE: "Em revisão por um técnico do GCCC.",
   VALIDADA: "Classificação confirmada por um técnico do GCCC.",
-  ENCAMINHADA: "Encaminhada para a entidade competente.",
-  EM_INVESTIGACAO: "Em investigação pela entidade competente.",
+  ENCAMINHADA: "Encaminhada para tratamento no GCCC.",
+  EM_INVESTIGACAO: "Em investigação.",
   ARQUIVADA: "Processo arquivado.",
   REJEITADA: "Denúncia rejeitada após análise.",
 };
 
-export const ESTADO_RESPOSTA_LABEL: Record<EstadoResposta, string> = {
-  AGUARDA: "Aguarda",
-  RESPONDIDO: "Respondido",
-  ACUSACAO: "Acusação",
-  ARQUIVADO: "Arquivado",
+export type MacroEstado = "EM_TRATAMENTO" | "SOB_INVESTIGACAO" | "FINALIZADA";
+
+export function macroEstado(e: EstadoDenuncia): MacroEstado {
+  if (e === "EM_INVESTIGACAO") return "SOB_INVESTIGACAO";
+  if (e === "ARQUIVADA" || e === "REJEITADA") return "FINALIZADA";
+  return "EM_TRATAMENTO";
+}
+
+export const MACRO_ESTADO_LABEL: Record<MacroEstado, string> = {
+  EM_TRATAMENTO: "Em tratamento",
+  SOB_INVESTIGACAO: "Sob investigação",
+  FINALIZADA: "Finalizada",
 };
+
+export function macroEstadoDescricao(e: EstadoDenuncia): string {
+  if (e === "EM_INVESTIGACAO") return "O GCCC está a investigar o processo.";
+  if (e === "ARQUIVADA") return "O processo foi encerrado e arquivado pelo GCCC.";
+  if (e === "REJEITADA") return "O processo foi encerrado: a denúncia não reuniu condições para prosseguir.";
+  return "O seu processo está a ser tratado pelo GCCC.";
+}
+
+export function macroEstadoBadgeClass(m: MacroEstado): string {
+  switch (m) {
+    case "SOB_INVESTIGACAO":
+      return "bg-amber-soft text-amber";
+    case "FINALIZADA":
+      return "bg-gray-badge-soft text-gray-badge";
+    case "EM_TRATAMENTO":
+    default:
+      return "bg-teal-soft text-teal";
+  }
+}
 
 export const TIPO_OPERACAO_LABEL: Record<TipoOperacao, string> = {
   CRIACAO: "Criação",
@@ -64,40 +90,6 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
   TECNICO: "Técnico",
   CONSULTA: "Consulta",
 };
-
-export function estadoRespostaDisplay(e: EstadoResposta, forwardedAt?: string | null): string {
-  if (e === "AGUARDA" && forwardedAt) {
-    const dias = (Date.now() - new Date(forwardedAt).getTime()) / 86400000;
-    if (dias > 30) return "SEM_RESPOSTA";
-  }
-  return e;
-}
-
-export function estadoRespostaBadgeClass(e: EstadoResposta, forwardedAt?: string | null): string {
-  if (e === "AGUARDA" && forwardedAt) {
-    const dias = (Date.now() - new Date(forwardedAt).getTime()) / 86400000;
-    if (dias > 30) return "bg-amber-soft text-amber";
-  }
-  switch (e) {
-    case "ACUSACAO":
-      return "bg-green-soft text-green";
-    case "RESPONDIDO":
-      return "bg-gray-badge-soft text-gray-badge";
-    case "ARQUIVADO":
-      return "bg-bg-alt text-muted border border-border-strong";
-    case "AGUARDA":
-    default:
-      return "bg-teal-soft text-teal";
-  }
-}
-
-export function respostaResumo(estado: EstadoResposta, forwardedAt: string, dataResposta: string | null): string {
-  if (estado === "AGUARDA") {
-    const dias = Math.floor((Date.now() - new Date(forwardedAt).getTime()) / 86400000);
-    return dias > 30 ? "+30 dias" : "aguarda";
-  }
-  return dataResposta ? timeAgo(dataResposta) : "—";
-}
 
 export function prioridadeBadgeClass(p: Prioridade | null | undefined): string {
   switch (p) {

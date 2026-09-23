@@ -207,11 +207,14 @@ protótipo.**
 | GET | `/api/admin/denuncias/{id}` | Detalhe de uma denúncia — autenticado |
 | PUT | `/api/admin/denuncias/{id}` | Atualiza classificação/observações sem mudar de estado |
 | POST | `/api/admin/denuncias/{id}/validar` | Valida a denúncia (categoria + prioridade finais) |
-| POST | `/api/admin/denuncias/{id}/encaminhar` | Encaminha para a entidade competente |
+| POST | `/api/admin/denuncias/{id}/encaminhar` | Aceita a denúncia validada no sistema de gestão do GCCC |
+| POST | `/api/admin/denuncias/{id}/investigar` | Marca a denúncia encaminhada como em investigação ativa |
 | POST | `/api/admin/denuncias/{id}/rejeitar` | Rejeita a denúncia |
-| POST | `/api/admin/denuncias/{id}/arquivar` | Arquiva a denúncia |
+| POST | `/api/admin/denuncias/{id}/arquivar` | Arquiva a denúncia (conclui o processo) |
 | GET | `/api/admin/denuncias/{id}/anexos/{anexo_id}` | Download de um anexo — autenticado |
 | GET | `/api/admin/dashboard/stats` \| `/categories` \| `/status` \| `/priority` \| `/monthly` | Indicadores do dashboard |
+| GET | `/api/admin/auditoria` \| `/api/admin/auditoria/export` | Registo global de auditoria, com filtros, e exportação CSV |
+| GET/POST | `/api/admin/utilizadores` | Lista e criação de contas de técnicos |
 
 Documentação interativa completa (OpenAPI/Swagger) em `http://localhost:8000/docs`.
 
@@ -227,10 +230,15 @@ Documentação interativa completa (OpenAPI/Swagger) em `http://localhost:8000/d
    transita automaticamente para `EM_ANALISE`.
 6. O técnico confirma ou corrige a categoria/prioridade sugeridas, regista observações e **valida**
    a denúncia (`VALIDADA`).
-7. O técnico **encaminha** a denúncia para a entidade competente (`ENCAMINHADA`), ou **rejeita**/
-   **arquiva** conforme o caso.
-8. Cada transição fica registada em `audit_logs`, visível no histórico da denúncia e (de forma
-   filtrada, sem dados internos) na consulta pública por protocolo.
+7. O técnico **encaminha** a denúncia — isto é, aceita-a formalmente no sistema de gestão do GCCC
+   para tratamento (`ENCAMINHADA`). Não se trata de um reenvio a uma entidade externa: essa
+   aceitação é o que o título do projeto designa por "encaminhamento".
+8. A partir daí, o técnico pode marcar a denúncia como **em investigação** (`EM_INVESTIGACAO`) e,
+   por fim, **arquivá-la** para concluir o processo (`ARQUIVADA`), ou **rejeitá-la** em qualquer
+   ponto anterior ao arquivamento (`REJEITADA`).
+9. Cada transição fica registada em `audit_logs`, visível no histórico da denúncia e (de forma
+   filtrada, sem dados internos) na consulta pública por protocolo — que também resume o estado em
+   três categorias simples para o cidadão: **em tratamento**, **sob investigação** ou **finalizada**.
 
 ## 17. Arquitetura do LLM
 
@@ -241,12 +249,20 @@ Documentação interativa completa (OpenAPI/Swagger) em `http://localhost:8000/d
   desse texto. A resposta é validada (`app/schemas/llm.py`) e, se inválida ou o Ollama estiver
   indisponível, a denúncia segue para validação manual sem bloquear o fluxo (`llm_erro` fica
   registado).
-- `backend/app/services/chatbot_service.py`: assistente informativo do denunciante, com prompt de
-  sistema próprio e regras explícitas (não investiga, não acusa, não presta aconselhamento
-  jurídico definitivo, não garante resultados).
-- Ambos suportam `LLM_MODE=mock` (heurísticas simples por palavras-chave, sem depender do Ollama —
-  útil para desenvolver o frontend) e `LLM_MODE=ollama` (chamada real ao Qwen3:4B-Instruct via
-  `POST /api/chat` do Ollama, com `"think": false` para respostas rápidas e `"format": "json"`).
+- `backend/app/services/chatbot_service.py`: assistente **conversacional** do denunciante — não é
+  um FAQ estático nem está limitado a perguntas predefinidas. O prompt de sistema convida o modelo
+  a dialogar livremente sobre a situação do cidadão (ajudar a perceber se algo é corrupção, que
+  informação reunir, exemplos), mantendo sempre as mesmas regras estritas (não investiga, não
+  acusa, não presta aconselhamento jurídico definitivo, não garante resultados). A conversa é
+  acessível diretamente na página inicial (secção "Fale com o assistente", embutida na página, não
+  apenas um link) e, a partir de qualquer página pública, através de um widget flutuante — ambos
+  partilham o mesmo estado de conversa.
+- Ambos os serviços suportam `LLM_MODE=mock` (heurísticas simples por palavras-chave, sem depender
+  do Ollama — útil para desenvolver o frontend) e `LLM_MODE=ollama` (chamada real ao
+  Qwen3:4B-Instruct via `POST /api/chat` do Ollama, com `"think": false` para respostas rápidas e
+  `"format": "json"` na classificação). O chatbot usa `"num_predict": 300` e temperatura 0.6 para
+  equilibrar profundidade da conversa com latência num Qwen3 a correr em CPU; ajuste
+  `OLLAMA_TIMEOUT_SECONDS` (120s por omissão) se o hardware for mais lento.
 - A categoria e prioridade sugeridas pelo LLM (`categoria_llm`, `prioridade_llm`, ...) são sempre
   guardadas separadamente da validação humana (`categoria_validada`, `prioridade_validada`, ...) —
   nunca são fundidas ou promovidas automaticamente ao estado "validado".
@@ -256,10 +272,10 @@ Documentação interativa completa (OpenAPI/Swagger) em `http://localhost:8000/d
 - Sem migrações versionadas (Alembic) — tabelas criadas via `create_all`.
 - Uploads guardados em disco local, sem antivírus nem verificação de conteúdo além de
   extensão/MIME/tamanho.
-- Sem gestão de utilizadores multi-perfil (apenas um técnico de demonstração é criado
-  automaticamente); as páginas "Encaminhamentos", "Auditoria" e "Utilizadores" da área de gestão
-  são apresentadas na navegação como enquadramento do sistema completo, mas não estão implementadas
-  nesta entrega.
+- Existem quatro perfis de utilizador (`ADMIN`, `COORDENADOR`, `TECNICO`, `CONSULTA`) e a página
+  "Utilizadores" documenta as permissões pretendidas por perfil, mas essa tabela é informativa: o
+  protótipo não aplica restrições de autorização por perfil — qualquer conta autenticada pode
+  validar, encaminhar, investigar ou arquivar qualquer denúncia.
 - Classificação do LLM não é determinística nem infalível — é sempre apresentada como sugestão não
   vinculativa, sujeita a validação humana.
 - Sem envio de notificações (email/SMS) ao denunciante sobre mudanças de estado.

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Minus, Plus, X } from "lucide-react";
+import { Check, Minus, Plus, ShieldCheck, X } from "lucide-react";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
+import { PageHeader } from "@/components/admin/PageHeader";
+import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { USER_ROLE_LABEL, timeAgo, formatDate } from "@/lib/format";
 import { USER_ROLES } from "@/lib/types";
@@ -59,24 +61,22 @@ export default function UtilizadoresPage() {
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl text-ink">Utilizadores</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            {users ? `${users.length} contas com acesso à área de gestão` : "…"} · dados fictícios
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-2 rounded-md bg-green px-4 py-2.5 text-sm font-medium text-bg hover:bg-green-dark"
-        >
-          {showForm ? <X size={16} /> : <Plus size={16} />} {showForm ? "Cancelar" : "Criar utilizador"}
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Utilizadores"
+        subtitle={`${users ? `${users.length} contas com acesso à área de gestão` : "…"} · dados fictícios`}
+        action={
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="flex items-center gap-2 rounded-md bg-green px-4 py-2.5 text-sm font-medium text-bg hover:bg-green-dark"
+          >
+            {showForm ? <X size={16} /> : <Plus size={16} />} {showForm ? "Cancelar" : "Criar utilizador"}
+          </button>
+        }
+      />
 
       {showForm && (
-        <form onSubmit={criarUtilizador} className="mt-6 grid gap-4 rounded-xl border border-border bg-bg-alt p-6 md:grid-cols-4">
+        <form onSubmit={criarUtilizador} className="grid gap-4 rounded-xl border border-border bg-bg-alt p-6 md:grid-cols-4">
           <label className="block md:col-span-1">
             <span className="mb-1.5 block text-sm font-medium text-ink">Nome</span>
             <input
@@ -136,7 +136,7 @@ export default function UtilizadoresPage() {
         </form>
       )}
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[700px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
@@ -172,9 +172,8 @@ export default function UtilizadoresPage() {
         </table>
       </div>
 
-      <div className="mt-6 rounded-xl border border-border bg-card p-6">
-        <p className="text-sm font-semibold text-ink">Permissões por perfil</p>
-        <div className="mt-4 overflow-x-auto">
+      <Card title="Permissões por perfil" icon={ShieldCheck}>
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[500px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
@@ -201,7 +200,7 @@ export default function UtilizadoresPage() {
           Toda a validação fica associada ao técnico autenticado. Esta tabela é informativa — neste
           protótipo, qualquer conta autenticada pode executar todas as ações sobre denúncias.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

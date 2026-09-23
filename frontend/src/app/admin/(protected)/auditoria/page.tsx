@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { API_BASE_URL, apiGet } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { TIPO_OPERACAO_LABEL, formatDateTime } from "@/lib/format";
 import { TIPOS_OPERACAO } from "@/lib/types";
@@ -75,11 +76,10 @@ export default function AuditoriaPage() {
   }
 
   return (
-    <div>
-      <h1 className="text-3xl text-ink">Auditoria</h1>
-      <p className="mt-1 text-sm text-ink-soft">Registo imutável de operações sobre processos e contas · dados fictícios</p>
+    <div className="space-y-6">
+      <PageHeader title="Auditoria" subtitle="Registo imutável de operações sobre processos e contas · dados fictícios" />
 
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
         <input
           value={search}
           onChange={(e) => {
@@ -135,7 +135,7 @@ export default function AuditoriaPage() {
         </select>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card">
         <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">

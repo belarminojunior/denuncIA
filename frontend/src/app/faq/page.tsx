@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { SiteHeader } from "@/components/site/SiteHeader";
-import { SiteFooter } from "@/components/site/SiteFooter";
+import { PublicShell } from "@/components/site/PublicShell";
+import { FaqAssistantLink } from "@/components/site/FaqAssistantLink";
 
 export const metadata = {
   title: "Perguntas frequentes — GCCC",
@@ -105,18 +105,13 @@ const CATEGORIAS_SIMPLES = [
 
 export default function FaqPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-      <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-6 py-12">
-          <h1 className="text-3xl text-ink">Perguntas frequentes</h1>
-          <p className="mt-2 text-ink-soft">
-            Se a sua dúvida não estiver aqui, o{" "}
-            <Link href="/chat" className="text-green underline">
-              assistente
-            </Link>{" "}
-            responde a perguntas sobre o processo.
-          </p>
+    <PublicShell>
+      <div className="mx-auto max-w-6xl px-6 py-12">
+        <h1 className="text-3xl text-ink">Perguntas frequentes</h1>
+        <p className="mt-2 text-ink-soft">
+          Se a sua dúvida não estiver aqui, o <FaqAssistantLink /> responde a perguntas sobre o
+          processo.
+        </p>
 
           <div className="mt-8 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
             <div className="space-y-8">
@@ -164,8 +159,6 @@ export default function FaqPage() {
             </div>
           </div>
         </div>
-      </main>
-      <SiteFooter />
-    </div>
+    </PublicShell>
   );
 }
