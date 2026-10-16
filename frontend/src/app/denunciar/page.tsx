@@ -1,14 +1,13 @@
+import type { Metadata } from "next";
+import { ReportWizard } from "@/components/report/ReportWizard";
 import { PublicShell } from "@/components/site/PublicShell";
-import { DenunciaWizard } from "@/components/denuncia/DenunciaWizard";
 
-export const metadata = {
-  title: "Fazer denúncia — GCCC",
-};
+export const metadata: Metadata = { title: "Fazer denúncia" };
 
-export default function DenunciarPage() {
+export default function ReportPage() {
   return (
     <PublicShell>
-      <DenunciaWizard />
+      <ReportWizard />
     </PublicShell>
   );
 }

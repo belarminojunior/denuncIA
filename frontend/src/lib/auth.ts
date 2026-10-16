@@ -1,30 +1,30 @@
-import type { UserOut } from "@/lib/types";
+import type { User } from "@/lib/types";
 
-const TOKEN_KEY = "gccc_token";
-const USER_KEY = "gccc_user";
+// Prototype-level session storage; a production system would prefer httpOnly cookies.
+const TOKEN_KEY = "denuncia_token";
+const USER_KEY = "denuncia_user";
 
-export function saveSession(token: string, user: UserOut): void {
-  window.localStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+const isBrowser = () => typeof window !== "undefined";
+
+export function saveSession(token: string, user: User): void {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  return isBrowser() ? localStorage.getItem(TOKEN_KEY) : null;
 }
 
-export function getStoredUser(): UserOut | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(USER_KEY);
-  if (!raw) return null;
+export function getStoredUser(): User | null {
+  if (!isBrowser()) return null;
   try {
-    return JSON.parse(raw) as UserOut;
+    return JSON.parse(localStorage.getItem(USER_KEY) ?? "null") as User | null;
   } catch {
     return null;
   }
 }
 
 export function clearSession(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
 }

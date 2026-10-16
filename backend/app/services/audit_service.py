@@ -1,27 +1,28 @@
 from sqlalchemy.orm import Session
 
-from app.models.audit_log import AuditLog, TipoOperacao
+from app.models import AuditAction, AuditLog, ReportStatus
 
 
-def log_action(
+def record(
     db: Session,
     *,
-    acao: str,
-    tipo: TipoOperacao,
-    denuncia_id: str | None = None,
+    action: AuditAction,
+    description: str,
+    report_id: str | None = None,
     user_id: str | None = None,
-    estado_anterior: str | None = None,
-    estado_novo: str | None = None,
-    observacao: str | None = None,
+    previous_status: ReportStatus | None = None,
+    new_status: ReportStatus | None = None,
+    note: str | None = None,
 ) -> AuditLog:
+    """Add an audit entry to the current transaction (the caller commits)."""
     entry = AuditLog(
-        denuncia_id=denuncia_id,
+        action=action,
+        description=description,
+        report_id=report_id,
         user_id=user_id,
-        tipo=tipo,
-        acao=acao,
-        estado_anterior=estado_anterior,
-        estado_novo=estado_novo,
-        observacao=observacao,
+        previous_status=previous_status.value if previous_status else None,
+        new_status=new_status.value if new_status else None,
+        note=note,
     )
     db.add(entry)
     db.flush()

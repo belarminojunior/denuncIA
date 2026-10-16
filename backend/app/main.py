@@ -1,7 +1,7 @@
 import logging
-import os
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,25 +9,25 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import admin_denuncias, auditoria, auth, chatbot, dashboard, denuncias, users
+from app.routers import admin_reports, audit_logs, auth, chat, dashboard, public_reports, users
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Cria as tabelas se ainda não existirem. Num ambiente de produção real,
-# preferir uma ferramenta de migrações (ex.: Alembic); mantido simples aqui
-# por se tratar de um protótipo académico.
+# Tables are created on startup to keep the academic prototype simple to run;
+# a production deployment should use versioned migrations (e.g. Alembic).
 Base.metadata.create_all(bind=engine)
-os.makedirs(settings.upload_dir, exist_ok=True)
+Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="GCCC — Plataforma de Denúncias de Corrupção",
+    title=f"{settings.app_name} — Plataforma de Denúncias de Corrupção",
     description=(
-        "API de apoio à categorização, validação e gestão de denúncias de corrupção. "
+        "API de apoio à categorização, validação e gestão de denúncias de corrupção do GCCC. "
         "O LLM local (Qwen3:4B-Instruct via Ollama) fornece apenas uma classificação "
-        "preliminar; a decisão final é sempre do técnico do GCCC."
+        "preliminar; a decisão final é sempre de um técnico."
     ),
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -40,33 +40,35 @@ app.add_middleware(
 
 
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc: StarletteHTTPException):
+async def handle_http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc: RequestValidationError):
-    # exc.errors() pode incluir em 'ctx' a exceção Python original (não serializável em
-    # JSON); mantemos apenas os campos serializáveis (loc/msg/type) para a resposta.
-    errors = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]
+async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    # exc.errors() may embed the original exception object, which is not JSON-serializable.
+    errors = [{"loc": error.get("loc"), "msg": error.get("msg"), "type": error.get("type")} for error in exc.errors()]
     return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request, exc: Exception):
-    logging.getLogger(__name__).exception("Erro não tratado")
+async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
 
 
-app.include_router(auth.router)
-app.include_router(denuncias.router)
-app.include_router(admin_denuncias.router)
-app.include_router(dashboard.router)
-app.include_router(chatbot.router)
-app.include_router(auditoria.router)
-app.include_router(users.router)
+for router in (
+    auth.router,
+    public_reports.router,
+    admin_reports.router,
+    dashboard.router,
+    audit_logs.router,
+    users.router,
+    chat.router,
+):
+    app.include_router(router)
 
 
 @app.get("/api/health")
-def health():
+def health() -> dict[str, str]:
     return {"status": "ok", "llm_mode": settings.llm_mode}

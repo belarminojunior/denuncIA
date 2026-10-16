@@ -1,16 +1,16 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
+import { StatusLookup } from "@/components/report/StatusLookup";
 import { PublicShell } from "@/components/site/PublicShell";
-import { ConsultarForm } from "@/components/denuncia/ConsultarForm";
 
-export const metadata = {
-  title: "Consultar denúncia — GCCC",
-};
+export const metadata: Metadata = { title: "Consultar denúncia" };
 
-export default function ConsultarPage() {
+export default function StatusPage() {
   return (
     <PublicShell>
+      {/* useSearchParams needs a Suspense boundary for static rendering. */}
       <Suspense fallback={null}>
-        <ConsultarForm />
+        <StatusLookup />
       </Suspense>
     </PublicShell>
   );

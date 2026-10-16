@@ -1,162 +1,289 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  Inbox,
-  Clock,
-  Search,
-  CheckCircle2,
-  Send,
-  ShieldAlert,
+  AlertCircle,
   Archive,
-  XCircle,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  Gauge,
+  Inbox,
   LayoutGrid,
   PieChart,
-  Gauge,
+  Search,
+  Send,
+  ShieldAlert,
   TrendingUp,
+  XCircle,
 } from "lucide-react";
-import { apiGet } from "@/lib/api";
+import { BarList } from "@/components/admin/BarList";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { StatCard } from "@/components/admin/StatCard";
+import { PriorityBadge } from "@/components/report/ReportBadges";
+import { Alert } from "@/components/ui/Alert";
+import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { CATEGORIA_LABEL, ESTADO_LABEL, PRIORIDADE_LABEL } from "@/lib/format";
-import type { Categoria, EstadoDenuncia, Prioridade } from "@/lib/types";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { ApiError, apiGet, withQuery } from "@/lib/api";
+import { formatMonth, timeAgo } from "@/lib/format";
+import { CATEGORY_LABELS, PRIORITY_LABELS, STATUS_LABELS } from "@/lib/labels";
+import type {
+  CategoryCount,
+  DashboardStats,
+  MonthlyCount,
+  Page,
+  Priority,
+  PriorityCount,
+  ReportStatus,
+  ReportSummary,
+  StatusCount,
+} from "@/lib/types";
 
-interface Stats {
-  total: number;
-  pendentes_validacao: number;
-  em_analise: number;
-  validadas: number;
-  encaminhadas: number;
-  em_investigacao: number;
-  arquivadas: number;
-  rejeitadas: number;
+const API = "/api/admin/dashboard";
+const REVIEW_QUEUE_SIZE = 5;
+
+// Recharts and inline styles need literal colours; these match the theme tokens.
+const CHART_COLORS = { green: "#1e4d33", grid: "#e4dbc3", axis: "#776d5a", cursor: "#f2ecda" };
+
+const STATUS_COLORS: Record<ReportStatus, string> = {
+  RECEIVED: "#b8ab90",
+  PENDING_REVIEW: "#9a5a17",
+  UNDER_REVIEW: "#6f8f7a",
+  VALIDATED: "#3f6b52",
+  ROUTED: "#1e4d33",
+  UNDER_INVESTIGATION: "#c48a3f",
+  ARCHIVED: "#d8cbac",
+  REJECTED: "#7d2634",
+};
+
+const PRIORITY_BAR_CLASSES: Record<Priority, string> = {
+  CRITICAL: "bg-red",
+  HIGH: "bg-amber",
+  MEDIUM: "bg-teal",
+  LOW: "bg-gray-badge",
+};
+
+interface DashboardData {
+  stats: DashboardStats;
+  categories: CategoryCount[];
+  statuses: StatusCount[];
+  priorities: PriorityCount[];
+  monthly: MonthlyCount[];
+  reviewQueue: ReportSummary[];
 }
 
-const ESTADO_COLORS: Record<string, string> = {
-  RECEBIDA: "#b8ab90",
-  PENDENTE_VALIDACAO: "#a8631c",
-  EM_ANALISE: "#3f6b52",
-  VALIDADA: "#1e4d33",
-  ENCAMINHADA: "#163a26",
-  EM_INVESTIGACAO: "#756c5a",
-  ARQUIVADA: "#d8cbac",
-  REJEITADA: "#7d2634",
-};
-
-const PRIORIDADE_BAR: Record<Prioridade, string> = {
-  CRITICA: "bg-red",
-  ALTA: "bg-amber",
-  MEDIA: "bg-green",
-  BAIXA: "bg-gray-badge",
-};
+async function loadDashboard(): Promise<DashboardData> {
+  const [stats, categories, statuses, priorities, monthly, reviewQueue] = await Promise.all([
+    apiGet<DashboardStats>(`${API}/stats`),
+    apiGet<CategoryCount[]>(`${API}/categories`),
+    apiGet<StatusCount[]>(`${API}/statuses`),
+    apiGet<PriorityCount[]>(`${API}/priorities`),
+    apiGet<MonthlyCount[]>(`${API}/monthly`),
+    apiGet<Page<ReportSummary>>(
+      withQuery("/api/admin/reports", { status: "PENDING_REVIEW", page_size: REVIEW_QUEUE_SIZE }),
+    ),
+  ]);
+  return { stats, categories, statuses, priorities, monthly, reviewQueue: reviewQueue.items };
+}
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [categorias, setCategorias] = useState<{ categoria: Categoria; total: number }[]>([]);
-  const [estados, setEstados] = useState<{ estado: EstadoDenuncia; total: number }[]>([]);
-  const [prioridades, setPrioridades] = useState<{ prioridade: Prioridade; total: number }[]>([]);
-  const [mensal, setMensal] = useState<{ mes: string; total: number }[]>([]);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<Stats>("/api/admin/dashboard/stats").then(setStats).catch(() => {});
-    apiGet<{ categoria: Categoria; total: number }[]>("/api/admin/dashboard/categories").then(setCategorias).catch(() => {});
-    apiGet<{ estado: EstadoDenuncia; total: number }[]>("/api/admin/dashboard/status").then(setEstados).catch(() => {});
-    apiGet<{ prioridade: Prioridade; total: number }[]>("/api/admin/dashboard/priority").then(setPrioridades).catch(() => {});
-    apiGet<{ mes: string; total: number }[]>("/api/admin/dashboard/monthly").then(setMensal).catch(() => {});
+    async function load() {
+      try {
+        setData(await loadDashboard());
+      } catch (loadError) {
+        setError(loadError instanceof ApiError ? loadError.message : "Não foi possível carregar o dashboard.");
+      }
+    }
+    load();
   }, []);
 
-  const maxCategoria = Math.max(1, ...categorias.map((c) => c.total));
-  const maxPrioridade = Math.max(1, ...prioridades.map((p) => p.total));
-  const totalEstados = estados.reduce((sum, e) => sum + e.total, 0) || 1;
+  const stats = data?.stats;
+  const listByStatus = (status: ReportStatus) => `/admin/denuncias?status=${status}`;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
-        subtitle={`Dados fictícios para demonstração · atualizado a ${new Date().toLocaleString("pt-PT")}`}
+        subtitle="Visão geral das denúncias recebidas · dados fictícios para demonstração"
+        action={
+          <ButtonLink href={listByStatus("PENDING_REVIEW")}>
+            Rever pendentes <ArrowRight size={16} aria-hidden />
+          </ButtonLink>
+        }
       />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total de denúncias" value={stats?.total} icon={Inbox} tone="accent" />
-        <StatCard label="Pendentes de validação" value={stats?.pendentes_validacao} icon={Clock} tone="warning" />
-        <StatCard label="Em análise" value={stats?.em_analise} icon={Search} />
-        <StatCard label="Validadas" value={stats?.validadas} icon={CheckCircle2} />
-        <StatCard label="Encaminhadas" value={stats?.encaminhadas} icon={Send} />
-        <StatCard label="Em investigação" value={stats?.em_investigacao} icon={ShieldAlert} />
-        <StatCard label="Arquivadas" value={stats?.arquivadas} icon={Archive} />
-        <StatCard label="Rejeitadas" value={stats?.rejeitadas} icon={XCircle} />
+      {error && <Alert tone="error">{error}</Alert>}
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard label="Total de denúncias" value={stats?.total} icon={Inbox} tone="accent" href="/admin/denuncias" />
+        <StatCard
+          label="Pendentes de validação"
+          value={stats?.pending_review}
+          icon={Clock}
+          tone="highlight"
+          href={listByStatus("PENDING_REVIEW")}
+        />
+        <StatCard label="Em análise" value={stats?.under_review} icon={Search} href={listByStatus("UNDER_REVIEW")} />
+        <StatCard label="Validadas" value={stats?.validated} icon={CheckCircle2} href={listByStatus("VALIDATED")} />
+        <StatCard label="Encaminhadas" value={stats?.routed} icon={Send} href={listByStatus("ROUTED")} />
+        <StatCard
+          label="Em investigação"
+          value={stats?.under_investigation}
+          icon={ShieldAlert}
+          href={listByStatus("UNDER_INVESTIGATION")}
+        />
+        <StatCard label="Arquivadas" value={stats?.archived} icon={Archive} href={listByStatus("ARCHIVED")} />
+        <StatCard label="Rejeitadas" value={stats?.rejected} icon={XCircle} href={listByStatus("REJECTED")} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Card title="Denúncias por categoria" icon={LayoutGrid}>
-          <div className="space-y-4">
-            {categorias.map((c) => (
-              <div key={c.categoria}>
-                <div className="flex justify-between text-sm">
-                  <span className="text-ink-soft">{CATEGORIA_LABEL[c.categoria] ?? c.categoria}</span>
-                  <span className="font-medium text-ink">{c.total}</span>
-                </div>
-                <div className="mt-1.5 h-2 rounded-full bg-bg-alt">
-                  <div className="h-2 rounded-full bg-green" style={{ width: `${(c.total / maxCategoria) * 100}%` }} />
-                </div>
-              </div>
-            ))}
-            {categorias.length === 0 && <p className="text-sm text-muted">Sem dados ainda.</p>}
-          </div>
+      <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
+        <Card
+          title="A aguardar validação"
+          icon={AlertCircle}
+          description="Denúncias já classificadas pela IA que precisam de revisão humana."
+          bodyClassName="-mx-5 -mb-5 sm:-mx-6 sm:-mb-6"
+        >
+          <ReviewQueue reports={data?.reviewQueue} />
         </Card>
 
         <Card title="Denúncias por estado" icon={PieChart}>
-          <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-alt">
-            {estados.map((e) => (
-              <div key={e.estado} style={{ width: `${(e.total / totalEstados) * 100}%`, background: ESTADO_COLORS[e.estado] ?? "#7a705d" }} />
-            ))}
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            {estados.map((e) => (
-              <div key={e.estado} className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ESTADO_COLORS[e.estado] ?? "#7a705d" }} />
-                <span className="truncate text-ink-soft">{ESTADO_LABEL[e.estado]}</span>
-                <span className="ml-auto font-medium text-ink">{e.total}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Prioridade" icon={Gauge}>
-          <div className="space-y-4">
-            {prioridades.map((p) => (
-              <div key={p.prioridade}>
-                <div className="flex justify-between text-sm">
-                  <span className="text-ink-soft">{PRIORIDADE_LABEL[p.prioridade]}</span>
-                  <span className="font-medium text-ink">{p.total}</span>
-                </div>
-                <div className="mt-1.5 h-2 rounded-full bg-bg-alt">
-                  <div
-                    className={`h-2 rounded-full ${PRIORIDADE_BAR[p.prioridade]}`}
-                    style={{ width: `${(p.total / maxPrioridade) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          {data ? <StatusDistribution statuses={data.statuses} /> : <Skeleton className="h-32 w-full" />}
         </Card>
       </div>
 
-      <Card title="Denúncias por mês" icon={TrendingUp}>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card title="Por categoria" icon={LayoutGrid}>
+          {data ? (
+            <BarList
+              items={data.categories.map(({ category, total }) => ({
+                key: category,
+                label: CATEGORY_LABELS[category],
+                value: total,
+              }))}
+            />
+          ) : (
+            <Skeleton className="h-48 w-full" />
+          )}
+        </Card>
+
+        <Card title="Por prioridade" icon={Gauge}>
+          {data ? (
+            <BarList
+              items={data.priorities.map(({ priority, total }) => ({
+                key: priority,
+                label: PRIORITY_LABELS[priority],
+                value: total,
+                barClassName: PRIORITY_BAR_CLASSES[priority],
+              }))}
+            />
+          ) : (
+            <Skeleton className="h-48 w-full" />
+          )}
+        </Card>
+      </div>
+
+      <Card title="Denúncias por mês" icon={TrendingUp} description="Últimos sete meses">
         <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={mensal}>
-              <CartesianGrid vertical={false} stroke="#e4dbc3" />
-              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#7a705d" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: "#7a705d" }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip cursor={{ fill: "#f2ecda" }} contentStyle={{ borderRadius: 8, borderColor: "#e4dbc3" }} />
-              <Bar dataKey="total" fill="#1e4d33" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {data ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.monthly.map((entry) => ({ ...entry, label: formatMonth(entry.month) }))}>
+                <CartesianGrid vertical={false} stroke={CHART_COLORS.grid} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_COLORS.axis }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 12, fill: CHART_COLORS.axis }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={32}
+                />
+                <Tooltip
+                  cursor={{ fill: CHART_COLORS.cursor }}
+                  formatter={(value) => [value, "Denúncias"]}
+                  contentStyle={{ borderRadius: 8, borderColor: CHART_COLORS.grid }}
+                />
+                <Bar dataKey="total" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <Skeleton className="h-full w-full" />
+          )}
         </div>
       </Card>
     </div>
+  );
+}
+
+function ReviewQueue({ reports }: { reports: ReportSummary[] | undefined }) {
+  if (!reports) {
+    return (
+      <div className="space-y-3 px-5 pb-5 sm:px-6">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Skeleton key={index} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+  if (reports.length === 0) {
+    return <EmptyState icon={CheckCircle2} title="Nada pendente" description="Todas as denúncias classificadas foram revistas." />;
+  }
+  return (
+    <ul className="divide-y divide-border border-t border-border">
+      {reports.map((report) => {
+        const category = report.validated_category ?? report.ai_category;
+        const priority = report.validated_priority ?? report.ai_priority;
+        return (
+          <li key={report.id}>
+            <Link
+              href={`/admin/denuncias/${report.id}`}
+              className="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-bg-alt/60 sm:px-6"
+            >
+              <span className="min-w-0">
+                <span className="protocol-code block text-sm font-semibold text-ink">{report.protocol}</span>
+                <span className="block truncate text-xs text-muted">
+                  {category ? CATEGORY_LABELS[category] : "Sem categoria"} · {timeAgo(report.created_at)}
+                </span>
+              </span>
+              {priority && <PriorityBadge priority={priority} />}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function StatusDistribution({ statuses }: { statuses: StatusCount[] }) {
+  const total = statuses.reduce((sum, entry) => sum + entry.total, 0);
+  if (total === 0) return <p className="text-sm text-muted">Sem dados.</p>;
+
+  return (
+    <>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-alt">
+        {statuses.map((entry) => (
+          <div
+            key={entry.status}
+            title={`${STATUS_LABELS[entry.status]}: ${entry.total}`}
+            style={{ width: `${(entry.total / total) * 100}%`, background: STATUS_COLORS[entry.status] }}
+          />
+        ))}
+      </div>
+      <ul className="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-2">
+        {statuses.map((entry) => (
+          <li key={entry.status} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: STATUS_COLORS[entry.status] }} aria-hidden />
+            <span className="truncate text-ink-soft">{STATUS_LABELS[entry.status]}</span>
+            <span className="ml-auto font-medium tabular-nums text-ink">{entry.total}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

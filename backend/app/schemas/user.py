@@ -2,7 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models.user import UserRole
+from app.models import UserRole
+
+PASSWORD_MIN_LENGTH = 8
 
 
 class LoginRequest(BaseModel):
@@ -10,7 +12,7 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class UserOut(BaseModel):
+class UserRead(BaseModel):
     id: str
     name: str
     email: str
@@ -22,38 +24,32 @@ class UserOut(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user: UserOut
+    user: UserRead
 
 
-class UserListItemOut(BaseModel):
-    id: str
-    name: str
-    email: str
-    role: UserRole
-    ativo: bool
+class UserSummary(UserRead):
+    is_active: bool
     last_login_at: datetime | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
 
-
-class UserCreateRequest(BaseModel):
+class UserCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
-    role: UserRole = UserRole.TECNICO
+    role: UserRole = UserRole.TECHNICIAN
 
     @field_validator("name")
     @classmethod
-    def nome_minimo(cls, v: str) -> str:
-        v = (v or "").strip()
-        if len(v) < 2:
+    def require_full_name(cls, value: str) -> str:
+        value = (value or "").strip()
+        if len(value) < 2:
             raise ValueError("Indique o nome completo.")
-        return v
+        return value
 
     @field_validator("password")
     @classmethod
-    def password_minima(cls, v: str) -> str:
-        if len(v or "") < 8:
-            raise ValueError("A password deve ter pelo menos 8 caracteres.")
-        return v
+    def require_min_password_length(cls, value: str) -> str:
+        if len(value or "") < PASSWORD_MIN_LENGTH:
+            raise ValueError(f"A palavra-passe deve ter pelo menos {PASSWORD_MIN_LENGTH} caracteres.")
+        return value

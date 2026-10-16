@@ -1,37 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, status
 
-from app.database import get_db
-from app.models.user import User
-from app.schemas.user import UserCreateRequest, UserListItemOut
-from app.utils.security import get_current_user, hash_password
+from app.dependencies import CurrentUser, DbSession
+from app.models import User
+from app.schemas.user import UserCreate, UserSummary
+from app.utils.security import hash_password
 
-router = APIRouter(prefix="/api/admin/utilizadores", tags=["utilizadores"])
-
-
-@router.get("", response_model=list[UserListItemOut])
-def listar_utilizadores(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    users = db.query(User).order_by(User.created_at.asc()).all()
-    return [UserListItemOut.model_validate(u) for u in users]
+router = APIRouter(prefix="/api/admin/users", tags=["users"])
 
 
-@router.post("", response_model=UserListItemOut, status_code=status.HTTP_201_CREATED)
-def criar_utilizador(
-    payload: UserCreateRequest,
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    existente = db.query(User).filter(User.email == payload.email.lower()).first()
-    if existente is not None:
+@router.get("", response_model=list[UserSummary])
+def list_users(db: DbSession, _: CurrentUser):
+    return db.query(User).order_by(User.created_at.asc()).all()
+
+
+@router.post("", response_model=UserSummary, status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, db: DbSession, _: CurrentUser):
+    email = payload.email.lower()
+    if db.query(User.id).filter(User.email == email).first() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe um utilizador com este email.")
 
-    user = User(
-        name=payload.name,
-        email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
-        role=payload.role,
-    )
+    user = User(name=payload.name, email=email, password_hash=hash_password(payload.password), role=payload.role)
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserListItemOut.model_validate(user)
+    return user

@@ -1,88 +1,77 @@
-from datetime import datetime
+from collections import Counter
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import func
-from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models.denuncia import Denuncia, EstadoDenuncia, Prioridade
-from app.models.user import User
-from app.utils.security import get_current_user
+from app.dependencies import CurrentUser, DbSession
+from app.models import Category, Priority, Report, ReportStatus
+from app.schemas.dashboard import CategoryCount, DashboardStats, MonthlyCount, PriorityCount, StatusCount
+from app.utils.time import utc_now
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["dashboard"])
 
-_MESES_PT = [
-    "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez",
-]
+MONTHS_SHOWN = 7
+PRIORITY_ORDER = [Priority.CRITICAL, Priority.HIGH, Priority.MEDIUM, Priority.LOW]
 
 
-@router.get("/stats")
-def get_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    total = db.query(func.count(Denuncia.id)).scalar() or 0
-
-    def count_estado(estado: EstadoDenuncia) -> int:
-        return db.query(func.count(Denuncia.id)).filter(Denuncia.estado == estado).scalar() or 0
-
-    return {
-        "total": total,
-        "pendentes_validacao": count_estado(EstadoDenuncia.PENDENTE_VALIDACAO),
-        "em_analise": count_estado(EstadoDenuncia.EM_ANALISE),
-        "validadas": count_estado(EstadoDenuncia.VALIDADA),
-        "encaminhadas": count_estado(EstadoDenuncia.ENCAMINHADA),
-        "em_investigacao": count_estado(EstadoDenuncia.EM_INVESTIGACAO),
-        "arquivadas": count_estado(EstadoDenuncia.ARQUIVADA),
-        "rejeitadas": count_estado(EstadoDenuncia.REJEITADA),
-    }
-
-
-@router.get("/categories")
-def get_categories(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    categoria_efetiva = func.coalesce(Denuncia.categoria_validada, Denuncia.categoria_llm)
-    rows = (
-        db.query(categoria_efetiva.label("categoria"), func.count(Denuncia.id).label("total"))
-        .group_by("categoria")
-        .all()
+@router.get("/stats", response_model=DashboardStats)
+def get_stats(db: DbSession, _: CurrentUser):
+    counts = dict(db.query(Report.status, func.count(Report.id)).group_by(Report.status).all())
+    return DashboardStats(
+        total=sum(counts.values()),
+        pending_review=counts.get(ReportStatus.PENDING_REVIEW, 0),
+        under_review=counts.get(ReportStatus.UNDER_REVIEW, 0),
+        validated=counts.get(ReportStatus.VALIDATED, 0),
+        routed=counts.get(ReportStatus.ROUTED, 0),
+        under_investigation=counts.get(ReportStatus.UNDER_INVESTIGATION, 0),
+        archived=counts.get(ReportStatus.ARCHIVED, 0),
+        rejected=counts.get(ReportStatus.REJECTED, 0),
     )
-    resultado = [{"categoria": categoria.value if categoria else "OUTROS", "total": total} for categoria, total in rows]
-    resultado.sort(key=lambda r: r["total"], reverse=True)
-    return resultado
 
 
-@router.get("/status")
-def get_status(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = (
-        db.query(Denuncia.estado, func.count(Denuncia.id).label("total"))
-        .group_by(Denuncia.estado)
-        .all()
-    )
-    return [{"estado": estado.value, "total": total} for estado, total in rows]
+@router.get("/categories", response_model=list[CategoryCount])
+def get_categories(db: DbSession, _: CurrentUser):
+    effective_category = func.coalesce(Report.validated_category, Report.ai_category)
+    totals: Counter[Category] = Counter()
+    # Reports still awaiting classification have no category yet and are counted as OTHER.
+    for category, total in db.query(effective_category, func.count(Report.id)).group_by(effective_category):
+        totals[category or Category.OTHER] += total
+    return [CategoryCount(category=category, total=total) for category, total in totals.most_common()]
 
 
-@router.get("/priority")
-def get_priority(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    prioridade_efetiva = func.coalesce(Denuncia.prioridade_validada, Denuncia.prioridade_llm)
-    rows = (
-        db.query(prioridade_efetiva.label("prioridade"), func.count(Denuncia.id).label("total"))
-        .group_by("prioridade")
-        .all()
-    )
-    ordem = {p.value: i for i, p in enumerate([Prioridade.CRITICA, Prioridade.ALTA, Prioridade.MEDIA, Prioridade.BAIXA])}
-    resultado = [{"prioridade": p.value if p else "MEDIA", "total": total} for p, total in rows]
-    resultado.sort(key=lambda r: ordem.get(r["prioridade"], 99))
-    return resultado
-
-
-@router.get("/monthly")
-def get_monthly(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    denuncias = db.query(Denuncia.created_at).all()
-    contagem: dict[str, int] = {}
-    for (created_at,) in denuncias:
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at)
-        chave = f"{created_at.year}-{created_at.month:02d}"
-        contagem[chave] = contagem.get(chave, 0) + 1
-
-    chaves_ordenadas = sorted(contagem.keys())[-7:]
+@router.get("/statuses", response_model=list[StatusCount])
+def get_statuses(db: DbSession, _: CurrentUser):
+    totals = dict(db.query(Report.status, func.count(Report.id)).group_by(Report.status).all())
+    # Ordered along the workflow, so the chart reads from intake to closure.
     return [
-        {"mes": _MESES_PT[int(chave.split("-")[1]) - 1], "total": contagem[chave]} for chave in chaves_ordenadas
+        StatusCount(status=report_status, total=totals[report_status])
+        for report_status in ReportStatus
+        if report_status in totals
     ]
+
+
+@router.get("/priorities", response_model=list[PriorityCount])
+def get_priorities(db: DbSession, _: CurrentUser):
+    effective_priority = func.coalesce(Report.validated_priority, Report.ai_priority)
+    totals: Counter[Priority] = Counter()
+    for priority, total in db.query(effective_priority, func.count(Report.id)).group_by(effective_priority):
+        totals[priority or Priority.MEDIUM] += total
+    return [PriorityCount(priority=priority, total=totals[priority]) for priority in PRIORITY_ORDER if totals[priority]]
+
+
+@router.get("/monthly", response_model=list[MonthlyCount])
+def get_monthly(db: DbSession, _: CurrentUser):
+    # Grouped in Python: month extraction differs between SQLite and PostgreSQL.
+    counts = Counter(created_at.strftime("%Y-%m") for (created_at,) in db.query(Report.created_at).all())
+    # Months without reports are included as zero so the chart shows a continuous timeline.
+    return [MonthlyCount(month=month, total=counts[month]) for month in _recent_months(MONTHS_SHOWN)]
+
+
+def _recent_months(count: int) -> list[str]:
+    """The last `count` calendar months as "YYYY-MM", oldest first, ending with the current one."""
+    today = utc_now()
+    months = []
+    for offset in range(count - 1, -1, -1):
+        year, month_index = divmod(today.year * 12 + today.month - 1 - offset, 12)
+        months.append(f"{year}-{month_index + 1:02d}")
+    return months

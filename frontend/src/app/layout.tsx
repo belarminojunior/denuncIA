@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Inter, JetBrains_Mono, Source_Serif_4 } from "next/font/google";
+import { ChatProvider } from "@/components/chat/ChatProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 
 const sourceSerif = Source_Serif_4({
   variable: "--font-source-serif",
@@ -20,20 +20,21 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GCCC — Plataforma de Denúncias",
+  title: {
+    default: "denuncIA — Denúncias de corrupção",
+    template: "%s · denuncIA",
+  },
   description:
-    "Plataforma de categorização e encaminhamento de denúncias de corrupção com apoio de LLMs. Protótipo académico.",
+    "denuncIA: plataforma de submissão, categorização e encaminhamento de denúncias de corrupção com apoio de modelos de linguagem. Protótipo académico.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="pt-MZ">
       <body className={`${inter.variable} ${sourceSerif.variable} ${mono.variable} antialiased`}>
-        {children}
+        <ToastProvider>
+          <ChatProvider>{children}</ChatProvider>
+        </ToastProvider>
       </body>
     </html>
   );

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -6,57 +7,53 @@ from app.config import get_settings
 
 settings = get_settings()
 
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".docx"}
+ALLOWED_EXTENSIONS = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".docx"})
+ALLOWED_MIME_TYPES = frozenset(
+    {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+)
+MAX_FILENAME_LENGTH = 150
+
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def validate_upload_file(file: UploadFile, size_bytes: int) -> None:
-    filename = file.filename or ""
-    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+def validate_upload(upload: UploadFile, size_bytes: int) -> None:
+    """Reject files by extension, declared MIME type and size."""
+    filename = upload.filename or ""
+    extension = Path(filename).suffix.lower()
 
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Extensão de ficheiro não permitida: {extension or 'desconhecida'}.",
         )
-
-    if file.content_type not in ALLOWED_MIME_TYPES:
+    if upload.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tipo de ficheiro não permitido: {file.content_type}.",
+            detail=f"Tipo de ficheiro não permitido: {upload.content_type}.",
         )
-
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if size_bytes > max_bytes:
+    if size_bytes > settings.max_upload_size_mb * 1024 * 1024:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ficheiro '{filename}' excede o limite de {settings.max_upload_size_mb} MB.",
+            detail=f"O ficheiro '{filename}' excede o limite de {settings.max_upload_size_mb} MB.",
         )
 
 
 def sanitize_filename(filename: str) -> str:
-    filename = filename.strip().replace("\\", "/").split("/")[-1]
-    filename = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
-    return filename[-150:] or "ficheiro"
-
-
-_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+    """Keep only the base name with safe characters (blocks path traversal)."""
+    base_name = filename.strip().replace("\\", "/").split("/")[-1]
+    return _UNSAFE_FILENAME_CHARS.sub("_", base_name)[-MAX_FILENAME_LENGTH:] or "ficheiro"
 
 
 def sanitize_user_text(text: str) -> str:
-    """Remove caracteres de controlo do texto livre submetido pelo cidadão.
+    """Strip control characters from free text written by citizens.
 
-    Não interpreta nem remove instruções em linguagem natural: essa defesa é
-    feita ao nível do prompt (delimitação clara + tratamento como dados), não
-    aqui. Esta função apenas neutraliza truques de baixo nível (caracteres de
-    controlo, ficheiros binários disfarçados de texto, etc.).
+    Natural-language prompt injection is handled at the prompt level (the text is
+    delimited and declared as data); this only removes low-level tricks.
     """
-    if not text:
-        return ""
-    text = _CONTROL_CHARS_RE.sub("", text)
-    return text.strip()
+    return _CONTROL_CHARS.sub("", text or "").strip()

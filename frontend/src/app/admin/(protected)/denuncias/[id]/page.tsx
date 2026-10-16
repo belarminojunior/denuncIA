@@ -1,435 +1,105 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Download, FileText } from "lucide-react";
-import clsx from "clsx";
-import { apiGet, apiPost, apiPut, ApiError, downloadAttachment } from "@/lib/api";
-import { Badge } from "@/components/ui/Badge";
-import {
-  CATEGORIA_LABEL,
-  ESTADO_LABEL,
-  MACRO_ESTADO_LABEL,
-  PRIORIDADE_LABEL,
-  estadoBadgeClass,
-  macroEstado,
-  macroEstadoBadgeClass,
-  prioridadeBadgeClass,
-  formatDateTime,
-} from "@/lib/format";
-import { CATEGORIAS, PRIORIDADES } from "@/lib/types";
-import type { Categoria, DenunciaDetailOut, Prioridade } from "@/lib/types";
+import { useParams } from "next/navigation";
+import { ArrowLeft, FileX } from "lucide-react";
+import { AiClassificationCard } from "@/components/admin/review/AiClassificationCard";
+import { AuditTrail } from "@/components/admin/review/AuditTrail";
+import { ReportFacts } from "@/components/admin/review/ReportFacts";
+import { ReviewPanel } from "@/components/admin/review/ReviewPanel";
+import { StageBadge, StatusBadge } from "@/components/report/ReportBadges";
+import { ButtonLink } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { ApiError, apiGet } from "@/lib/api";
+import { formatDateTime, timeAgo } from "@/lib/format";
+import type { ReportDetail } from "@/lib/types";
 
-export default function DenunciaDetailPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const [denuncia, setDenuncia] = useState<DenunciaDetailOut | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function ReportDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const [report, setReport] = useState<ReportDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const [categoriaValidada, setCategoriaValidada] = useState<Categoria | "">("");
-  const [prioridadeValidada, setPrioridadeValidada] = useState<Prioridade | "">("");
-  const [observacoes, setObservacoes] = useState("");
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const carregar = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async () => {
     try {
-      const data = await apiGet<DenunciaDetailOut>(`/api/admin/denuncias/${params.id}`);
-      setDenuncia(data);
-      setCategoriaValidada(data.categoria_validada ?? data.categoria_llm ?? "");
-      setPrioridadeValidada(data.prioridade_validada ?? data.prioridade_llm ?? "");
-      setObservacoes(data.observacoes_tecnico ?? "");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível carregar a denúncia.");
-    } finally {
-      setLoading(false);
+      setReport(await apiGet<ReportDetail>(`/api/admin/reports/${id}`));
+    } catch (loadError) {
+      setError(loadError instanceof ApiError ? loadError.message : "Não foi possível carregar a denúncia.");
     }
-  }, [params.id]);
+  }, [id]);
 
   useEffect(() => {
-    function iniciar() {
-      carregar();
+    async function loadOnMount() {
+      await load();
     }
-    iniciar();
-  }, [carregar]);
+    loadOnMount();
+  }, [load]);
 
-  async function runAction(
-    action: "validar" | "encaminhar" | "investigar" | "rejeitar" | "arquivar" | "guardar"
-  ) {
-    if (!denuncia) return;
-    setActionError(null);
-
-    if (action === "validar" && !categoriaValidada) {
-      setActionError("Selecione a categoria validada antes de validar a denúncia.");
-      return;
-    }
-
-    setActionLoading(action);
-    try {
-      let updated: DenunciaDetailOut;
-      if (action === "guardar") {
-        updated = await apiPut<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}`, {
-          categoria_validada: categoriaValidada || null,
-          prioridade_validada: prioridadeValidada || null,
-          observacoes_tecnico: observacoes,
-        });
-      } else if (action === "validar") {
-        updated = await apiPost<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}/validar`, {
-          categoria_validada: categoriaValidada,
-          prioridade_validada: prioridadeValidada || "MEDIA",
-          observacoes_tecnico: observacoes,
-        });
-      } else {
-        updated = await apiPost<DenunciaDetailOut>(`/api/admin/denuncias/${denuncia.id}/${action}`, {
-          observacoes_tecnico: observacoes,
-        });
-      }
-      setDenuncia(updated);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Não foi possível concluir a ação.");
-    } finally {
-      setActionLoading(null);
-    }
+  async function refresh() {
+    setIsRefreshing(true);
+    await load();
+    setIsRefreshing(false);
   }
 
-  if (loading) return <p className="text-sm text-muted">A carregar denúncia…</p>;
-  if (error || !denuncia) {
+  if (error) {
     return (
-      <div>
-        <p className="text-sm text-red">{error ?? "Denúncia não encontrada."}</p>
-        <button onClick={() => router.push("/admin/denuncias")} className="mt-4 text-sm text-green hover:underline">
-          Voltar à lista
-        </button>
-      </div>
+      <EmptyState
+        icon={FileX}
+        title="Denúncia indisponível"
+        description={error}
+        action={<ButtonLink href="/admin/denuncias" variant="secondary">Voltar à lista</ButtonLink>}
+      />
     );
   }
 
-  const podeEditarClassificacao = denuncia.estado === "PENDENTE_VALIDACAO" || denuncia.estado === "EM_ANALISE";
-  const podeEncaminhar = denuncia.estado === "VALIDADA";
-  const podeInvestigar = denuncia.estado === "ENCAMINHADA";
-  const podeArquivarComoConclusao = denuncia.estado === "EM_INVESTIGACAO";
-  const jaFinalizada = denuncia.estado === "ARQUIVADA" || denuncia.estado === "REJEITADA";
+  if (!report) return <DetailSkeleton />;
 
   return (
-    <div>
-      <Link href="/admin/denuncias" className="flex items-center gap-1.5 text-sm text-muted hover:text-green">
-        <ChevronLeft size={14} /> Denúncias / <span className="protocol-code">{denuncia.protocolo}</span>
-      </Link>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="protocol-code text-2xl font-bold text-ink">{denuncia.protocolo}</h1>
-        <div className="flex gap-2">
-          <Badge className={macroEstadoBadgeClass(macroEstado(denuncia.estado))}>
-            {MACRO_ESTADO_LABEL[macroEstado(denuncia.estado)]}
-          </Badge>
-          <Badge className={estadoBadgeClass(denuncia.estado)}>{ESTADO_LABEL[denuncia.estado]}</Badge>
-          {(denuncia.prioridade_validada ?? denuncia.prioridade_llm) && (
-            <Badge className={prioridadeBadgeClass(denuncia.prioridade_validada ?? denuncia.prioridade_llm)}>
-              Prioridade {PRIORIDADE_LABEL[(denuncia.prioridade_validada ?? denuncia.prioridade_llm)!]}
-            </Badge>
-          )}
+    <div className="space-y-6">
+      <div>
+        <Link href="/admin/denuncias" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-green">
+          <ArrowLeft size={14} aria-hidden /> Denúncias
+        </Link>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <h1 className="protocol-code text-2xl font-bold text-ink sm:text-3xl">{report.protocol}</h1>
+          <StatusBadge status={report.status} />
+          <StageBadge status={report.status} />
         </div>
+        <p className="mt-1.5 text-sm text-ink-soft">
+          Recebida a {formatDateTime(report.created_at)} · atualizada {timeAgo(report.updated_at)}
+          {report.assignee_name && ` · responsável: ${report.assignee_name}`}
+        </p>
       </div>
-      <p className="mt-1 text-sm text-muted">
-        Submetida a {formatDateTime(denuncia.created_at)} ·{" "}
-        {denuncia.anonima ? "Denúncia anónima" : denuncia.nome_denunciante || "Identificada"} ·{" "}
-        {denuncia.local_ocorrencia || "Local não indicado"}
-      </p>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="space-y-6">
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold text-ink">Dados da denúncia</h2>
-            <dl className="mt-4 divide-y divide-border text-sm">
-              <Row label="Protocolo" value={denuncia.protocolo} mono />
-              <Row label="Identificação" value={denuncia.anonima ? "Anónima — sem dados de contacto" : denuncia.nome_denunciante || "—"} />
-              {!denuncia.anonima && denuncia.email_denunciante && <Row label="Email" value={denuncia.email_denunciante} />}
-              {!denuncia.anonima && denuncia.telefone_denunciante && <Row label="Telefone" value={denuncia.telefone_denunciante} />}
-              <Row label="Local" value={denuncia.local_ocorrencia || "Não indicado"} />
-              <Row label="Data do facto" value={denuncia.data_ocorrencia || "Não indicada"} />
-              <Row
-                label="Tipo indicado"
-                value={denuncia.tipo_denuncia ? CATEGORIA_LABEL[denuncia.tipo_denuncia as Categoria] : "Não indicado — o denunciante declarou não saber a categoria"}
-              />
-              <Row label="Descrição" value={denuncia.descricao} multiline />
-              {denuncia.envolvidos && <Row label="Envolvidos" value={denuncia.envolvidos} />}
-              {denuncia.valor_envolvido && <Row label="Valor envolvido" value={denuncia.valor_envolvido} />}
-              <div className="grid grid-cols-[10rem_1fr] gap-4 px-1 py-3.5">
-                <dt className="text-muted">Anexos</dt>
-                <dd className="flex flex-wrap gap-2">
-                  {denuncia.attachments.length === 0 && <span className="text-ink-soft">Nenhum anexo</span>}
-                  {denuncia.attachments.map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => downloadAttachment(denuncia.id, a.id, a.filename)}
-                      className="flex items-center gap-2 rounded-md border border-border-strong bg-bg-alt px-3 py-1.5 text-xs text-ink hover:border-green hover:text-green"
-                    >
-                      <FileText size={13} /> {a.filename} <Download size={12} />
-                    </button>
-                  ))}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-ink">Classificação preliminar</h2>
-              <span className="rounded-md bg-bg-alt px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-muted">
-                Sugestão automática · {denuncia.llm_modelo || "—"}
-              </span>
-            </div>
-
-            {denuncia.llm_erro ? (
-              <p className="mt-4 rounded-md border border-amber/30 bg-amber-soft p-4 text-sm text-ink">
-                A classificação automática falhou: {denuncia.llm_erro}. A validação deve ser feita
-                manualmente pelo técnico.
-              </p>
-            ) : (
-              <>
-                <div className="mt-4 grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-xs text-muted">Categoria sugerida</p>
-                    <p className="mt-1 text-lg font-semibold text-ink">
-                      {denuncia.categoria_llm ? CATEGORIA_LABEL[denuncia.categoria_llm] : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted">Confiança</p>
-                    <p className="mt-1 text-lg font-semibold text-ink">
-                      {denuncia.confianca_llm != null ? `${Math.round(denuncia.confianca_llm * 100)}%` : "—"}
-                    </p>
-                    <div className="mt-1 h-1.5 w-full rounded-full bg-bg-alt">
-                      <div
-                        className="h-1.5 rounded-full bg-green"
-                        style={{ width: `${(denuncia.confianca_llm ?? 0) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted">Prioridade sugerida</p>
-                    <p className="mt-1 text-lg font-semibold text-amber">
-                      {denuncia.prioridade_llm ? PRIORIDADE_LABEL[denuncia.prioridade_llm] : "—"}
-                    </p>
-                  </div>
-                </div>
-
-                {denuncia.resumo_llm && (
-                  <div className="mt-4">
-                    <p className="text-xs text-muted">Resumo</p>
-                    <p className="mt-1 text-sm leading-relaxed text-ink">{denuncia.resumo_llm}</p>
-                  </div>
-                )}
-                {denuncia.justificacao_llm && (
-                  <div className="mt-4">
-                    <p className="text-xs text-muted">Justificação</p>
-                    <p className="mt-1 text-sm leading-relaxed text-ink">{denuncia.justificacao_llm}</p>
-                  </div>
-                )}
-                {denuncia.indicadores_llm && denuncia.indicadores_llm.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs text-muted">Indicadores identificados</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {denuncia.indicadores_llm.map((ind) => (
-                        <span key={ind} className="rounded-full bg-green-soft px-3 py-1 text-xs text-green">
-                          {ind}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            <p className="mt-5 border-t border-border pt-4 text-xs leading-relaxed text-muted">
-              A classificação é gerada por um modelo de linguagem local e serve apenas de apoio à
-              decisão. Não determina a veracidade da denúncia nem produz efeitos jurídicos.
-            </p>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold text-ink">Histórico e auditoria</h2>
-            <ol className="relative mt-4 space-y-4 border-l border-border-strong pl-5">
-              {denuncia.audit_logs.map((log) => (
-                <li key={log.id} className="relative">
-                  <span className="absolute -left-[1.42rem] top-1 h-2 w-2 rounded-full bg-green" />
-                  <p className="text-sm font-semibold text-ink">
-                    {log.acao} <span className="font-normal text-muted">{formatDateTime(log.created_at)}</span>
-                  </p>
-                  {(log.user_nome || log.observacao) && (
-                    <p className="text-sm text-ink-soft">
-                      {log.user_nome ? `${log.user_nome}` : "sistema"}
-                      {log.observacao ? ` — ${log.observacao}` : ""}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </section>
+          <AiClassificationCard report={report} onRefresh={refresh} isRefreshing={isRefreshing} />
+          <ReportFacts report={report} />
+          <AuditTrail logs={report.audit_logs} />
         </div>
-
-        <aside className="h-fit space-y-5 rounded-xl border border-border bg-card p-6">
-          <div>
-            <h2 className="text-lg font-semibold text-ink">Validação humana</h2>
-            <p className="text-sm text-muted">A decisão final é do técnico responsável.</p>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink">Categoria validada</label>
-            <select
-              value={categoriaValidada}
-              onChange={(e) => setCategoriaValidada(e.target.value as Categoria)}
-              disabled={!podeEditarClassificacao}
-              className="w-full rounded-md border border-border-strong bg-bg-alt px-3.5 py-2.5 text-sm text-ink disabled:opacity-60"
-            >
-              <option value="">Selecionar categoria</option>
-              {CATEGORIAS.map((c) => (
-                <option key={c} value={c}>
-                  {CATEGORIA_LABEL[c]}
-                </option>
-              ))}
-            </select>
-            {denuncia.categoria_llm && (
-              <p className="mt-1.5 text-xs text-muted">
-                Sugerido: {CATEGORIA_LABEL[denuncia.categoria_llm]}
-                {categoriaValidada === denuncia.categoria_llm ? " · sem alteração" : ""}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink">Prioridade</label>
-            <div className="grid grid-cols-4 gap-2">
-              {PRIORIDADES.map((p) => (
-                <button
-                  key={p}
-                  disabled={!podeEditarClassificacao}
-                  onClick={() => setPrioridadeValidada(p)}
-                  className={clsx(
-                    "rounded-md border px-2 py-2 text-xs font-medium disabled:opacity-60",
-                    prioridadeValidada === p
-                      ? "border-amber bg-amber text-bg"
-                      : "border-border-strong bg-bg-alt text-ink hover:border-amber"
-                  )}
-                >
-                  {PRIORIDADE_LABEL[p]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink">Observações do técnico</label>
-            <textarea
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              disabled={jaFinalizada}
-              rows={5}
-              placeholder="Fundamente a validação, correção de categoria ou arquivamento..."
-              className="w-full resize-y rounded-md border border-border-strong bg-bg-alt px-3.5 py-2.5 text-sm text-ink disabled:opacity-60"
-            />
-          </div>
-
-          {(denuncia.estado === "ENCAMINHADA" || denuncia.estado === "EM_INVESTIGACAO") && (
-            <div className="rounded-md bg-bg-alt p-3 text-sm text-ink-soft">
-              {denuncia.estado === "ENCAMINHADA"
-                ? "Encaminhada para tratamento no sistema do GCCC."
-                : "Em investigação ativa pelo GCCC."}
-            </div>
-          )}
-
-          {actionError && <p className="text-sm text-red">{actionError}</p>}
-
-          {!jaFinalizada && (
-            <div className="space-y-2.5">
-              {podeEditarClassificacao && (
-                <button
-                  onClick={() => runAction("validar")}
-                  disabled={actionLoading !== null}
-                  className="w-full rounded-md bg-green px-4 py-2.5 text-sm font-semibold text-bg hover:bg-green-dark disabled:opacity-60"
-                >
-                  {actionLoading === "validar" ? "A validar…" : "Validar denúncia"}
-                </button>
-              )}
-              {podeEncaminhar && (
-                <button
-                  onClick={() => runAction("encaminhar")}
-                  disabled={actionLoading !== null}
-                  className="w-full rounded-md bg-green px-4 py-2.5 text-sm font-semibold text-bg hover:bg-green-dark disabled:opacity-60"
-                >
-                  {actionLoading === "encaminhar" ? "A encaminhar…" : "Encaminhar denúncia"}
-                </button>
-              )}
-              {podeInvestigar && (
-                <button
-                  onClick={() => runAction("investigar")}
-                  disabled={actionLoading !== null}
-                  className="w-full rounded-md bg-green px-4 py-2.5 text-sm font-semibold text-bg hover:bg-green-dark disabled:opacity-60"
-                >
-                  {actionLoading === "investigar" ? "A atualizar…" : "Marcar como em investigação"}
-                </button>
-              )}
-              {podeArquivarComoConclusao && (
-                <button
-                  onClick={() => runAction("arquivar")}
-                  disabled={actionLoading !== null}
-                  className="w-full rounded-md bg-green px-4 py-2.5 text-sm font-semibold text-bg hover:bg-green-dark disabled:opacity-60"
-                >
-                  {actionLoading === "arquivar" ? "A arquivar…" : "Arquivar processo (concluir)"}
-                </button>
-              )}
-
-              <div className={clsx("grid gap-2.5", podeArquivarComoConclusao ? "grid-cols-1" : "grid-cols-2")}>
-                <button
-                  onClick={() => runAction("rejeitar")}
-                  disabled={actionLoading !== null}
-                  className="rounded-md border border-red/40 px-4 py-2.5 text-sm font-semibold text-red hover:bg-red-soft disabled:opacity-60"
-                >
-                  Rejeitar
-                </button>
-                {!podeArquivarComoConclusao && (
-                  <button
-                    onClick={() => runAction("arquivar")}
-                    disabled={actionLoading !== null}
-                    className="rounded-md border border-border-strong px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink disabled:opacity-60"
-                  >
-                    Arquivar
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {jaFinalizada && (
-            <p className="rounded-md bg-bg-alt p-3 text-sm text-ink-soft">
-              Este processo já se encontra em estado final ({ESTADO_LABEL[denuncia.estado]}) e não
-              pode ser editado.
-            </p>
-          )}
-
-          <div className="border-t border-border pt-4 text-xs text-muted">
-            <p>Técnico responsável: <span className="font-medium text-ink">{denuncia.tecnico_responsavel_nome ?? "—"}</span></p>
-            {denuncia.validated_at && <p className="mt-1">Validado em: {formatDateTime(denuncia.validated_at)}</p>}
-            {denuncia.forwarded_at && <p className="mt-1">Encaminhado em: {formatDateTime(denuncia.forwarded_at)}</p>}
-            <p className="mt-1">Toda a decisão fica registada no histórico de auditoria.</p>
-          </div>
-        </aside>
+        <div className="lg:sticky lg:top-6">
+          {/* Re-mounts once the AI result arrives so the form picks up its suggestion. */}
+          <ReviewPanel key={report.ai_category ?? "pending"} report={report} onUpdated={setReport} />
+        </div>
       </div>
     </div>
   );
 }
 
-function Row({ label, value, multiline, mono }: { label: string; value: string; multiline?: boolean; mono?: boolean }) {
+function DetailSkeleton() {
   return (
-    <div className="grid grid-cols-[10rem_1fr] gap-4 px-1 py-3.5">
-      <dt className="text-muted">{label}</dt>
-      <dd className={clsx("text-ink", multiline && "whitespace-pre-wrap leading-relaxed", mono && "protocol-code")}>
-        {value}
-      </dd>
+    <div className="space-y-6">
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-9 w-72" />
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <div className="space-y-6">
+          <Skeleton className="h-56 w-full" />
+          <Skeleton className="h-72 w-full" />
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
     </div>
   );
 }

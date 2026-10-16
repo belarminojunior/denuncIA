@@ -2,215 +2,212 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download } from "lucide-react";
-import { API_BASE_URL, apiGet } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { Download, Search, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { Badge } from "@/components/ui/Badge";
-import { TIPO_OPERACAO_LABEL, formatDateTime } from "@/lib/format";
-import { TIPOS_OPERACAO } from "@/lib/types";
-import type { AuditoriaListOut, TipoOperacao, UserListItemOut } from "@/lib/types";
+import { StatusBadge } from "@/components/report/ReportBadges";
+import { Alert } from "@/components/ui/Alert";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Input, Select } from "@/components/ui/Field";
+import { Pagination } from "@/components/ui/Pagination";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { ApiError, apiGet, downloadFile, withQuery } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
+import { AUDIT_ACTION_LABELS } from "@/lib/labels";
+import { AUDIT_ACTIONS, type AuditAction, type AuditLogEntry, type Page, type UserSummary } from "@/lib/types";
 
-const PAGE_SIZE = 10;
+const API = "/api/admin/audit-logs";
+const PAGE_SIZE = 15;
+const EXPORT_FILENAME = "auditoria_denuncia.csv";
 
-const PERIODOS = [
-  { value: 1, label: "Últimas 24 horas" },
-  { value: 7, label: "Últimos 7 dias" },
-  { value: 30, label: "Últimos 30 dias" },
-  { value: 0, label: "Todo o período" },
+const PERIODS = [
+  { days: 1, label: "Últimas 24 horas" },
+  { days: 7, label: "Últimos 7 dias" },
+  { days: 30, label: "Últimos 30 dias" },
+  { days: 0, label: "Todo o período" },
 ];
 
-const TIPO_BADGE: Record<TipoOperacao, string> = {
-  CRIACAO: "bg-teal-soft text-teal",
-  CLASSIFICACAO_LLM: "bg-bg-alt text-ink-soft border border-border-strong",
-  ACESSO: "bg-gray-badge-soft text-gray-badge",
-  ALTERACAO_ESTADO: "bg-amber-soft text-amber",
-  VALIDACAO: "bg-green-soft text-green",
-  ENCAMINHAMENTO: "bg-teal-soft text-teal",
-  LOGIN: "bg-gray-badge-soft text-gray-badge",
+const ACTION_TONES: Record<AuditAction, BadgeTone> = {
+  CREATED: "teal",
+  AI_CLASSIFICATION: "neutral",
+  ACCESS: "gray",
+  STATUS_CHANGE: "amber",
+  VALIDATION: "green",
+  ROUTING: "teal",
+  LOGIN: "gray",
 };
 
-export default function AuditoriaPage() {
+const COLUMNS = ["Data e hora", "Operação", "Processo", "Autor", "Descrição", "Estado"];
+
+export default function AuditLogPage() {
+  const notify = useToast();
   const [search, setSearch] = useState("");
-  const [tipo, setTipo] = useState<string>("");
-  const [userId, setUserId] = useState<string>("");
-  const [dias, setDias] = useState(7);
+  const [action, setAction] = useState("");
+  const [userId, setUserId] = useState("");
+  const [days, setDays] = useState(7);
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<AuditoriaListOut | null>(null);
-  const [users, setUsers] = useState<UserListItemOut[]>([]);
+  const [data, setData] = useState<Page<AuditLogEntry> | null>(null);
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const debouncedSearch = useDebouncedValue(search);
+  const filters = { search: debouncedSearch, action, user_id: userId, days };
 
   useEffect(() => {
-    apiGet<UserListItemOut[]>("/api/admin/utilizadores").then(setUsers).catch(() => {});
+    async function loadUsers() {
+      try {
+        setUsers(await apiGet<UserSummary[]>("/api/admin/users"));
+      } catch {
+        // The author filter is optional; the log still works without it.
+      }
+    }
+    loadUsers();
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE), dias: String(dias) });
-    if (search) params.set("search", search);
-    if (tipo) params.set("tipo", tipo);
-    if (userId) params.set("user_id", userId);
-    apiGet<AuditoriaListOut>(`/api/admin/auditoria?${params.toString()}`).then(setData);
-  }, [search, tipo, userId, dias, page]);
+    async function load() {
+      setError(null);
+      try {
+        setData(await apiGet<Page<AuditLogEntry>>(withQuery(API, { ...filters, page, page_size: PAGE_SIZE })));
+      } catch (loadError) {
+        setError(loadError instanceof ApiError ? loadError.message : "Não foi possível carregar o registo de auditoria.");
+      }
+    }
+    load();
+    // `filters` is rebuilt every render; its fields are the real dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, action, userId, days, page]);
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  function changeFilter<T>(setter: (value: T) => void) {
+    return (value: T) => {
+      setter(value);
+      setPage(1);
+    };
+  }
 
-  function exportarCsv() {
-    const params = new URLSearchParams({ dias: String(dias) });
-    if (search) params.set("search", search);
-    if (tipo) params.set("tipo", tipo);
-    if (userId) params.set("user_id", userId);
-    const token = getToken();
-    fetch(`${API_BASE_URL}/api/admin/auditoria/export?${params.toString()}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "auditoria_gccc.csv";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-      });
+  async function exportCsv() {
+    setIsExporting(true);
+    try {
+      await downloadFile(withQuery(`${API}/export`, filters), EXPORT_FILENAME);
+    } catch (exportError) {
+      notify(exportError instanceof ApiError ? exportError.message : "Não foi possível exportar.", "error");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Auditoria" subtitle="Registo imutável de operações sobre processos e contas · dados fictícios" />
+      <PageHeader
+        title="Auditoria"
+        subtitle="Registo imutável das operações sobre processos e contas"
+        action={
+          <Button variant="secondary" onClick={exportCsv} loading={isExporting}>
+            {!isExporting && <Download size={16} aria-hidden />} Exportar CSV
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap gap-3">
-        <input
-          value={search}
-          onChange={(e) => {
-            setPage(1);
-            setSearch(e.target.value);
-          }}
-          placeholder="Pesquisar por protocolo, utilizador ou operação"
-          className="min-w-[16rem] flex-1 rounded-md border border-border-strong bg-card px-3.5 py-2.5 text-sm text-ink focus:border-green focus:outline-none"
-        />
-        <select
-          value={tipo}
-          onChange={(e) => {
-            setPage(1);
-            setTipo(e.target.value);
-          }}
-          className="rounded-md border border-border-strong bg-card px-3.5 py-2.5 text-sm text-ink"
-        >
+        <div className="relative min-w-[15rem] flex-1">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden />
+          <Input
+            type="search"
+            aria-label="Pesquisar no registo"
+            value={search}
+            onChange={(event) => changeFilter(setSearch)(event.target.value)}
+            placeholder="Protocolo, utilizador ou descrição"
+            className="pl-9"
+          />
+        </div>
+        <Select aria-label="Operação" value={action} onChange={(event) => changeFilter(setAction)(event.target.value)} className="w-auto">
           <option value="">Operação: todas</option>
-          {TIPOS_OPERACAO.map((t) => (
-            <option key={t} value={t}>
-              {TIPO_OPERACAO_LABEL[t]}
+          {AUDIT_ACTIONS.map((value) => (
+            <option key={value} value={value}>
+              {AUDIT_ACTION_LABELS[value]}
             </option>
           ))}
-        </select>
-        <select
-          value={userId}
-          onChange={(e) => {
-            setPage(1);
-            setUserId(e.target.value);
-          }}
-          className="rounded-md border border-border-strong bg-card px-3.5 py-2.5 text-sm text-ink"
-        >
+        </Select>
+        <Select aria-label="Autor" value={userId} onChange={(event) => changeFilter(setUserId)(event.target.value)} className="w-auto">
           <option value="">Autor: todos</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}
             </option>
           ))}
-        </select>
-        <select
-          value={dias}
-          onChange={(e) => {
-            setPage(1);
-            setDias(Number(e.target.value));
-          }}
-          className="rounded-md border border-border-strong bg-card px-3.5 py-2.5 text-sm text-ink"
-        >
-          {PERIODOS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
+        </Select>
+        <Select aria-label="Período" value={days} onChange={(event) => changeFilter(setDays)(Number(event.target.value))} className="w-auto">
+          {PERIODS.map((period) => (
+            <option key={period.days} value={period.days}>
+              {period.label}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-5 py-3.5">ID</th>
-              <th className="px-5 py-3.5">Data e hora</th>
-              <th className="px-5 py-3.5">Processo</th>
-              <th className="px-5 py-3.5">Operação</th>
-              <th className="px-5 py-3.5">Autor e detalhe</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map((log) => (
-              <tr key={log.id} className="border-b border-border last:border-0 hover:bg-bg-alt">
-                <td className="px-5 py-3.5 protocol-code text-muted">#{log.id}</td>
-                <td className="px-5 py-3.5 text-ink-soft">{formatDateTime(log.created_at)}</td>
-                <td className="px-5 py-3.5">
-                  {log.protocolo && log.denuncia_id ? (
-                    <Link href={`/admin/denuncias/${log.denuncia_id}`} className="protocol-code text-green hover:underline">
-                      {log.protocolo}
-                    </Link>
-                  ) : (
-                    <span className="text-muted">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5">
-                  <Badge className={TIPO_BADGE[log.tipo]}>{log.tipo}</Badge>
-                </td>
-                <td className="px-5 py-3.5 text-ink">
-                  <span className="font-semibold">{log.user_nome ?? "Sistema"}</span> {log.acao}
-                </td>
-              </tr>
-            ))}
-            {data && data.items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-muted">
-                  Nenhum registo encontrado com os filtros aplicados.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {error && <Alert tone="error">{error}</Alert>}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 text-sm">
-          <span className="text-muted">
-            {data ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} de ${data.total} registos` : ""}
-          </span>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted">Os registos não podem ser editados nem apagados.</span>
-            <button
-              onClick={exportarCsv}
-              className="flex items-center gap-2 rounded-md border border-border-strong px-3 py-1.5 text-ink hover:border-green hover:text-green"
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
-          </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-bg-alt/50 text-left text-xs uppercase tracking-wide text-muted">
+                {COLUMNS.map((column) => (
+                  <th key={column} scope="col" className="px-5 py-3 font-semibold">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data
+                ? data.items.map((log) => <AuditRow key={log.id} log={log} />)
+                : Array.from({ length: 6 }, (_, row) => (
+                    <tr key={row} className="border-b border-border last:border-0">
+                      {COLUMNS.map((column) => (
+                        <td key={column} className="px-5 py-4">
+                          <Skeleton className="h-4 w-full max-w-28" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+            </tbody>
+          </table>
         </div>
-        {data && data.total > PAGE_SIZE && (
-          <div className="flex justify-end gap-2 border-t border-border px-5 py-3 text-sm">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="rounded-md border border-border-strong px-3 py-1.5 disabled:opacity-40"
-            >
-              Anterior
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="rounded-md border border-border-strong px-3 py-1.5 disabled:opacity-40"
-            >
-              Seguinte
-            </button>
-          </div>
+        {data && data.items.length === 0 && (
+          <EmptyState icon={ShieldCheck} title="Sem operações registadas" description="Nenhuma operação corresponde aos filtros escolhidos." />
         )}
+        {data && data.total > 0 && <Pagination page={page} pageSize={PAGE_SIZE} total={data.total} onPageChange={setPage} />}
       </div>
     </div>
+  );
+}
+
+function AuditRow({ log }: { log: AuditLogEntry }) {
+  return (
+    <tr className="border-b border-border align-top last:border-0">
+      <td className="whitespace-nowrap px-5 py-3.5 tabular-nums text-ink-soft">{formatDateTime(log.created_at)}</td>
+      <td className="px-5 py-3.5">
+        <Badge tone={ACTION_TONES[log.action]}>{AUDIT_ACTION_LABELS[log.action]}</Badge>
+      </td>
+      <td className="px-5 py-3.5">
+        {log.report_id && log.protocol ? (
+          <Link href={`/admin/denuncias/${log.report_id}`} className="protocol-code whitespace-nowrap font-medium text-green hover:underline">
+            {log.protocol}
+          </Link>
+        ) : (
+          <span className="text-muted">—</span>
+        )}
+      </td>
+      <td className="whitespace-nowrap px-5 py-3.5 text-ink">{log.user_name ?? "Sistema"}</td>
+      <td className="max-w-md px-5 py-3.5 text-ink-soft">
+        {log.description}
+        {log.note && <span className="mt-1 block text-xs italic text-muted">“{log.note}”</span>}
+      </td>
+      <td className="px-5 py-3.5">{log.new_status ? <StatusBadge status={log.new_status} /> : <span className="text-muted">—</span>}</td>
+    </tr>
   );
 }

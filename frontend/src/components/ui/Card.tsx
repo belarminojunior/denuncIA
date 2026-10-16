@@ -1,34 +1,36 @@
-import clsx from "clsx";
+import { cn } from "@/lib/cn";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
-export function Card({
-  title,
-  icon: Icon,
-  action,
-  className,
-  bodyClassName,
-  children,
-}: {
-  title?: React.ReactNode;
+interface CardProps {
+  title?: ReactNode;
+  description?: ReactNode;
   icon?: LucideIcon;
-  action?: React.ReactNode;
+  action?: ReactNode;
   className?: string;
   bodyClassName?: string;
-  children: React.ReactNode;
-}) {
+  children: ReactNode;
+}
+
+export function Card({ title, description, icon: Icon, action, className, bodyClassName, children }: CardProps) {
+  const hasHeader = Boolean(title || action);
   return (
-    <div className={clsx("rounded-xl border border-border bg-card p-6", className)}>
-      {(title || action) && (
-        <div className="flex items-center justify-between gap-3">
-          {title && (
-            <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-              {Icon && <Icon size={16} className="text-muted" />} {title}
-            </p>
-          )}
+    <section className={cn("rounded-xl border border-border bg-card p-5 sm:p-6", className)}>
+      {hasHeader && (
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            {title && (
+              <h2 className="flex items-center gap-2 font-sans text-sm font-semibold tracking-normal text-ink">
+                {Icon && <Icon size={16} className="text-muted" aria-hidden />}
+                {title}
+              </h2>
+            )}
+            {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+          </div>
           {action}
-        </div>
+        </header>
       )}
-      <div className={clsx(title || action ? "mt-5" : undefined, bodyClassName)}>{children}</div>
-    </div>
+      <div className={cn(hasHeader && "mt-5", bodyClassName)}>{children}</div>
+    </section>
   );
 }
