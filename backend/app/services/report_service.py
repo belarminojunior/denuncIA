@@ -97,7 +97,7 @@ def apply_ai_classification(report_id: str) -> None:
         audit_service.record(
             db,
             action=AuditAction.AI_CLASSIFICATION,
-            description=_classification_description(classification),
+            description=classification_description(classification),
             report_id=report.id,
             previous_status=previous_status,
             new_status=report.status,
@@ -117,7 +117,7 @@ def _store_classification(report: Report, classification: Classification) -> Non
     report.ai_error = classification.error
 
 
-def _classification_description(classification: Classification) -> str:
+def classification_description(classification: Classification) -> str:
     if classification.error:
         return "Classificação automática falhou — requer classificação manual"
     return (

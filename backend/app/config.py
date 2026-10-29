@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b-instruct"
     ollama_timeout_seconds: int = 120
+    # How long Ollama keeps the model loaded after a request (Ollama duration, e.g. "30m" or "24h").
+    ollama_keep_alive: str = "30m"
+    # CPU threads for inference; 0 lets Ollama choose (normally the number of physical cores).
+    ollama_num_thread: int = 0
 
     upload_dir: str = "./uploads"
     max_upload_size_mb: int = 10

@@ -1,4 +1,6 @@
 import logging
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -10,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.database import Base, engine
 from app.routers import admin_reports, audit_logs, auth, chat, dashboard, public_reports, users
+from app.services import llm_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,7 +23,17 @@ settings = get_settings()
 Base.metadata.create_all(bind=engine)
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Loading the model takes 15 s or more on CPU; doing it in the background at startup
+    # keeps that delay off the first citizen's report without blocking the API.
+    threading.Thread(target=llm_service.warm_up, daemon=True).start()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=f"{settings.app_name} — Plataforma de Denúncias de Corrupção",
     description=(
         "API de apoio à categorização, validação e gestão de denúncias de corrupção do GCCC. "
